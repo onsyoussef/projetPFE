@@ -1,0 +1,36 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "test:cloudinary-url": "node scripts/test-cloudinary-raw-url.js",
+    "generate-crypto-keys": "node scripts/generate-crypto-keys.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cloudinary": "^2.9.0",
+    "cors": "^2.8.6",
+    "dotenv": "^16.4.5",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.3.2",
+    "firebase-admin": "^13.7.0",
+    "hl7-standard": "^1.0.4",
+    "jsonwebtoken": "^9.0.3",
+    "mongodb": "^7.1.1",
+    "mongoose": "^9.2.4",
+    "multer": "^2.1.1",
+    "nodemailer": "^6.9.16",
+    "pdfkit": "^0.18.0",
+    "socket.io": "^4.8.3"
+  }
+}

@@ -1,0 +1,33 @@
+# Blueprint Render — Web Service Node (Express + Socket.IO)
+# Doc : https://render.com/docs/blueprint-spec
+#
+# Après connexion du dépôt : Dashboard → New → Blueprint → sélectionner ce fichier.
+# Renseigner les variables sensibles (JWT_SECRET, MONGODB_URI, etc.) dans l’UI ou ci‑dessous.
+#
+# MongoDB : utiliser MongoDB Atlas (ou autre) — autoriser les IP sortantes (0.0.0.0/0 en dev).
+# CORS : ALLOWED_ORIGINS doit inclure l’URL de ton front (web Flutter) et éventuellement l’URL Render de l’API.
+
+services:
+  - type: web
+    name: telemedecine-backend
+    runtime: node
+    region: frankfurt
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Obligatoires — à définir dans le dashboard Render (valeurs secrètes) :
+      # - MONGODB_URI
+      # - JWT_SECRET
+      # - ALLOWED_ORIGINS  (ex: https://mon-app.web.app,https://telemedecine-backend.onrender.com)
+      # - API_BASE_URL     (URL publique de ce service, ex: https://telemedecine-backend.onrender.com)
+      #
+      # Optionnel push FCM :
+      # - FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY
+      #
+      # Optionnel médias / WebRTC :
+      # - CLOUDINARY_* , STUN_URLS, etc.
