@@ -7,7 +7,7 @@ import 'dart:convert';
 
 import 'headsapp_theme.dart';
 import 'services/api_service.dart';
-import 'utils/patient_ui_utils.dart';
+import 'screens/share_doctor_picker_page.dart';
 import 'widgets/medical_dossier_file_viewer.dart';
 
 class DossierMedicalPage extends StatefulWidget {
@@ -81,36 +81,34 @@ extension on MedicalCategory {
 
 enum _ImportSource { deviceFiles, gallery, camera }
 
-class _DossierMedicalPageState extends State<DossierMedicalPage>
-    with SingleTickerProviderStateMixin {
-  static const Color _surface = HeadsAppColors.surfaceAlt;
+class _DossierMedicalPageState extends State<DossierMedicalPage> {
+  static const Color _surface = Color(0xFFF5F7FB);
   static const Color _primary = HeadsAppColors.brandAccent;
   static const Color _primaryDark = HeadsAppColors.brandPrimary;
   static const Color _accent = HeadsAppColors.danger;
+  static const Color _mutedText = Color(0xFF64748B);
+  static const Color _chipInactive = Color(0xFFE8EEF5);
+  static const Color _searchFill = Color(0xFFF0F4FA);
 
   final TextEditingController _searchCtrl = TextEditingController();
-  late TabController _tabController;
 
   List<Map<String, dynamic>> _items = [];
   bool _loading = true;
   String? _error;
   bool _uploading = false;
   String _effectivePatientId = '';
+  MedicalCategory? _filterCategory;
+  final Set<String> _selectedIds = {};
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
-    _tabController.addListener(() {
-      if (mounted) setState(() {});
-    });
     _boot();
   }
 
   @override
   void dispose() {
     _searchCtrl.dispose();
-    _tabController.dispose();
     super.dispose();
   }
 
@@ -194,23 +192,18 @@ class _DossierMedicalPageState extends State<DossierMedicalPage>
     }
   }
 
-  List<Map<String, dynamic>> _itemsForCategory(MedicalCategory cat) {
-    final key = cat.apiKey;
+  List<Map<String, dynamic>> _visibleItems() {
     final q = _searchCtrl.text.trim().toLowerCase();
     return _items.where((it) {
-      if ((it['category']?.toString() ?? '') != key) return false;
+      if (_filterCategory != null &&
+          (it['category']?.toString() ?? '') != _filterCategory!.apiKey) {
+        return false;
+      }
       if (q.isEmpty) return true;
       final title = (it['title']?.toString() ?? '').toLowerCase();
       final name = (it['filename']?.toString() ?? '').toLowerCase();
       return title.contains(q) || name.contains(q);
     }).toList();
-  }
-
-  String _categoryLabel(String? apiKey) {
-    for (final c in MedicalCategory.values) {
-      if (c.apiKey == apiKey) return c.label;
-    }
-    return (apiKey != null && apiKey.isNotEmpty) ? apiKey : '—';
   }
 
   String _displayName(Map<String, dynamic> it) {
@@ -219,30 +212,59 @@ class _DossierMedicalPageState extends State<DossierMedicalPage>
     return it['filename']?.toString() ?? 'Document';
   }
 
-  String _fmtDate(String? raw) {
+  String _fmtDateFrench(String? raw) {
     if (raw == null || raw.isEmpty) return '—';
     final dt = DateTime.tryParse(raw)?.toLocal();
     if (dt == null) return '—';
-    final d = dt.day.toString().padLeft(2, '0');
-    final m = dt.month.toString().padLeft(2, '0');
-    final y = dt.year.toString();
-    return '$d/$m/$y';
+    const months = [
+      'janvier',
+      'février',
+      'mars',
+      'avril',
+      'mai',
+      'juin',
+      'juillet',
+      'août',
+      'septembre',
+      'octobre',
+      'novembre',
+      'décembre',
+    ];
+    return '${dt.day} ${months[dt.month - 1]} ${dt.year}';
   }
 
-  String _dateLine(Map<String, dynamic> it) {
+  String _cardDate(Map<String, dynamic> it) {
     final doc = it['documentDate']?.toString();
-    if (doc != null && doc.isNotEmpty) {
-      return 'Date document : ${_fmtDate(doc)}';
-    }
-    return 'Ajouté le ${_fmtDate(it['createdAt']?.toString())}';
+    if (doc != null && doc.isNotEmpty) return _fmtDateFrench(doc);
+    return _fmtDateFrench(it['createdAt']?.toString());
   }
 
-  String _fmtSize(num? bytes) {
-    final b = (bytes ?? 0).toDouble();
-    if (b <= 0) return '—';
-    if (b < 1024) return '${b.toStringAsFixed(0)} o';
-    if (b < 1024 * 1024) return '${(b / 1024).toStringAsFixed(1)} Ko';
-    return '${(b / (1024 * 1024)).toStringAsFixed(1)} Mo';
+  String _fileTypeLabel(Map<String, dynamic> it) {
+    final isImage = (it['type']?.toString() ?? '') == 'image';
+    if (isImage) return 'IMG';
+    final name = (it['filename']?.toString() ?? '').toLowerCase();
+    final dot = name.lastIndexOf('.');
+    if (dot < 0 || dot >= name.length - 1) return 'DOC';
+    final ext = name.substring(dot + 1).toUpperCase();
+    return ext.length <= 5 ? ext : 'DOC';
+  }
+
+  Color _iconAccentForFile(Map<String, dynamic> it) {
+    final label = _fileTypeLabel(it);
+    if (label == 'PDF') return const Color(0xFFE53935);
+    if (label == 'IMG' || label == 'JPG' || label == 'JPEG' || label == 'PNG') {
+      return const Color(0xFF2563EB);
+    }
+    return _primaryDark;
+  }
+
+  Color _iconBgForFile(Map<String, dynamic> it) {
+    final label = _fileTypeLabel(it);
+    if (label == 'PDF') return const Color(0xFFFFEBEE);
+    if (label == 'IMG' || label == 'JPG' || label == 'JPEG' || label == 'PNG') {
+      return const Color(0xFFEFF6FF);
+    }
+    return _chipInactive;
   }
 
   IconData _iconForFilename(String filename, bool isImage) {
@@ -512,389 +534,290 @@ class _DossierMedicalPageState extends State<DossierMedicalPage>
     }
   }
 
-  Future<void> _openShareModal() async {
-    final selected = <String>{};
-    String? selectedDoctorId;
-    String selectedDoctorName = '';
-    String doctorQuery = '';
-    List<Map<String, dynamic>> doctors = [];
-    bool loadingDoctors = true;
-    String? doctorError;
+  Future<void> _openShareModal({Set<String>? initialSelection}) async {
+    final ids = initialSelection?.where((e) => e.isNotEmpty).toList() ?? const <String>[];
+    if (ids.isEmpty) return;
 
-    await showDialog<void>(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.35),
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setLocal) {
-            Future<void> loadDoctorsIfNeeded() async {
-              if (!loadingDoctors || doctors.isNotEmpty || doctorError != null) return;
-              try {
-                final list = await ApiService.getDoctors();
-                if (!mounted) return;
-                setLocal(() {
-                  doctors = list;
-                  loadingDoctors = false;
-                });
-              } catch (e) {
-                setLocal(() {
-                  loadingDoctors = false;
-                  doctorError = e.toString().replaceFirst('Exception: ', '');
-                });
-              }
-            }
-
-            loadDoctorsIfNeeded();
-            final visibleDoctors = doctors.where((d) {
-              final n = readableDoctorName(d['fullName']?.toString(), fallback: '').toLowerCase();
-              final s = (d['specialty']?.toString() ?? '').toLowerCase();
-              final q = doctorQuery.toLowerCase();
-              return q.isEmpty || n.contains(q) || s.contains(q);
-            }).toList();
-
-            final selectable = _items;
-
-            return Dialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-              child: Container(
-                constraints: const BoxConstraints(maxWidth: 560, maxHeight: 680),
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            'Partager avec un médecin',
-                            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () => Navigator.of(ctx).pop(),
-                          icon: const Icon(Icons.close_rounded),
-                        ),
-                      ],
-                    ),
-                    const Text(
-                      'Les fichiers sélectionnés seront envoyés dans le chat avec le médecin choisi.',
-                      style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      onChanged: (v) => setLocal(() => doctorQuery = v),
-                      decoration: const InputDecoration(
-                        hintText: 'Rechercher un médecin...',
-                        prefixIcon: Icon(Icons.search_rounded),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    if (loadingDoctors)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 8),
-                        child: Center(child: CircularProgressIndicator()),
-                      )
-                    else if (doctorError != null)
-                      Text(doctorError!, style: const TextStyle(color: Colors.red))
-                    else
-                      SizedBox(
-                        height: 140,
-                        child: ListView.builder(
-                          itemCount: visibleDoctors.length,
-                          itemBuilder: (_, i) {
-                            final d = visibleDoctors[i];
-                            final id = d['id']?.toString() ?? '';
-                            final selectedNow = selectedDoctorId == id;
-                            return ListTile(
-                              selected: selectedNow,
-                              selectedTileColor: _primary.withValues(alpha: 0.15),
-                              leading: CircleAvatar(
-                                backgroundColor: _primary.withValues(alpha: 0.25),
-                                backgroundImage: (d['photoPath']?.toString().isNotEmpty == true)
-                                    ? NetworkImage(
-                                        ApiService.resolveMediaUrl(d['photoPath'].toString()),
-                                      )
-                                    : null,
-                                child: (d['photoPath']?.toString().isNotEmpty == true)
-                                    ? null
-                                    : const Icon(Icons.person_rounded),
-                              ),
-                              title: Text(readableDoctorName(d['fullName']?.toString())),
-                              subtitle: Text(
-                                readableDecryptedField(
-                                  d['specialty']?.toString(),
-                                  fallback: '—',
-                                ),
-                              ),
-                              onTap: () {
-                                setLocal(() {
-                                  selectedDoctorId = id;
-                                  selectedDoctorName = readableDoctorName(d['fullName']?.toString());
-                                });
-                              },
-                            );
-                          },
-                        ),
-                      ),
-                    const Divider(height: 18),
-                    Row(
-                      children: [
-                        TextButton(
-                          onPressed: () {
-                            setLocal(() {
-                              selected
-                                ..clear()
-                                ..addAll(
-                                  selectable
-                                      .map((e) => e['id']?.toString() ?? '')
-                                      .where((e) => e.isNotEmpty),
-                                );
-                            });
-                          },
-                          child: const Text('Tout sélectionner'),
-                        ),
-                        TextButton(
-                          onPressed: () => setLocal(selected.clear),
-                          child: const Text('Tout désélectionner'),
-                        ),
-                      ],
-                    ),
-                    Expanded(
-                      child: ListView(
-                        children: selectable.map((it) {
-                          final id = it['id']?.toString() ?? '';
-                          final catLabel = _categoryLabel(it['category']?.toString());
-                          return CheckboxListTile(
-                            value: selected.contains(id),
-                            onChanged: (_) {
-                              setLocal(() {
-                                if (selected.contains(id)) {
-                                  selected.remove(id);
-                                } else if (id.isNotEmpty) {
-                                  selected.add(id);
-                                }
-                              });
-                            },
-                            title: Text(
-                              _displayName(it),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            subtitle: Text('$catLabel • ${_fmtSize(it['size'] as num?)}'),
-                            controlAffinity: ListTileControlAffinity.leading,
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: _primary.withValues(alpha: 0.16),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          '${selected.length} sélectionné(s)',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: _primaryDark,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: selectedDoctorId == null || selected.isEmpty
-                            ? null
-                            : () async {
-                                try {
-                                  final result = await ApiService.sharePatientMedicalDossier(
-                                    patientId: _effectivePatientId,
-                                    doctorId: selectedDoctorId!,
-                                    itemIds: selected.toList(),
-                                  );
-                                  if (!mounted || !context.mounted) return;
-                                  if (!ctx.mounted) return;
-                                  Navigator.of(ctx).pop();
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'Envoyé à Dr. ${readableDoctorName(result['doctorName']?.toString(), fallback: selectedDoctorName)} (${result['sharedCount'] ?? selected.length} fichier(s)).',
-                                      ),
-                                      behavior: SnackBarBehavior.floating,
-                                    ),
-                                  );
-                                } catch (e) {
-                                  if (!mounted || !context.mounted) return;
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        e.toString().replaceFirst('Exception: ', ''),
-                                      ),
-                                      behavior: SnackBarBehavior.floating,
-                                    ),
-                                  );
-                                }
-                              },
-                        icon: const Icon(Icons.send_rounded),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: _primaryDark,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        label: Text(
-                          selected.isEmpty
-                              ? 'Envoyer au médecin'
-                              : 'Envoyer au médecin (${selected.length})',
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  MedicalCategory get _currentCategory => MedicalCategory.values[_tabController.index];
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _surface,
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded),
-          onPressed: () => Navigator.of(context).maybePop(),
-          tooltip: 'Retour',
+    final shared = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => ShareDoctorPickerPage(
+          patientId: _effectivePatientId,
+          selectedItemIds: ids,
         ),
-        title: const Text('Dossier médical personnel'),
-        centerTitle: true,
-        backgroundColor: _primaryDark,
-        foregroundColor: Colors.white,
-        bottom: _loading || _error != null
-            ? null
-            : TabBar(
-                controller: _tabController,
-                isScrollable: true,
-                indicatorColor: Colors.white,
-                labelColor: Colors.white,
-                unselectedLabelColor: Colors.white70,
-                tabs: [
-                  for (final c in MedicalCategory.values) Tab(text: c.label),
-                ],
-              ),
       ),
-      floatingActionButton: _loading || _error != null
-          ? null
-          : FloatingActionButton.extended(
-              onPressed: _uploading ? null : () => _pickAndUpload(_currentCategory),
-              backgroundColor: _primaryDark,
-              foregroundColor: Colors.white,
-              icon: _uploading
-                  ? const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                    )
-                  : const Icon(Icons.add_rounded),
-              label: Text(_uploading ? 'Envoi…' : 'Ajouter'),
-            ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(_error!)))
-              : Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          const Text(
-                            'Votre dossier vous appartient : ajoutez vos documents hors des conversations. '
-                            'Vous pouvez les partager ensuite dans un chat médecin.',
-                            style: TextStyle(fontSize: 13, color: Color(0xFF475569), height: 1.35),
-                          ),
-                          const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: _searchCtrl,
-                                  onChanged: (_) => setState(() {}),
-                                  decoration: InputDecoration(
-                                    hintText: 'Rechercher dans l’onglet…',
-                                    prefixIcon: const Icon(Icons.search_rounded),
-                                    fillColor: Colors.white,
-                                    filled: true,
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(14),
-                                      borderSide: BorderSide.none,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              FilledButton.icon(
-                                onPressed: _items.isEmpty ? null : _openShareModal,
-                                icon: const Icon(Icons.share_rounded),
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: _primaryDark,
-                                  foregroundColor: Colors.white,
-                                  minimumSize: const Size(0, 42),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 10,
-                                  ),
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                  visualDensity: VisualDensity.compact,
-                                ),
-                                label: const Text('Partager'),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    Expanded(
-                      child: TabBarView(
-                        controller: _tabController,
-                        children: [
-                          for (final c in MedicalCategory.values)
-                            RefreshIndicator(
-                              onRefresh: _load,
-                              child: _buildCategoryBody(c),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ],
+    );
+    if (shared == true && mounted) {
+      setState(_selectedIds.clear);
+    }
+  }
+
+  Future<void> _onAddTapped() async {
+    if (_uploading) return;
+    MedicalCategory? cat = _filterCategory;
+    if (cat == null) {
+      cat = await showModalBottomSheet<MedicalCategory>(
+        context: context,
+        showDragHandle: true,
+        builder: (ctx) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 8, 20, 4),
+                child: Text(
+                  'Ajouter un document',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
                 ),
+              ),
+              for (final c in MedicalCategory.values)
+                ListTile(
+                  leading: Icon(Icons.folder_open_rounded, color: _primaryDark),
+                  title: Text(c.label),
+                  subtitle: Text(c.hint, style: const TextStyle(fontSize: 12)),
+                  onTap: () => Navigator.of(ctx).pop(c),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (cat != null && mounted) await _pickAndUpload(cat);
+  }
+
+  void _toggleSelection(String id) {
+    if (id.isEmpty) return;
+    setState(() {
+      if (_selectedIds.contains(id)) {
+        _selectedIds.remove(id);
+      } else {
+        _selectedIds.add(id);
+      }
+    });
+  }
+
+  Widget _buildHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 8, 16, 4),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+            color: _primaryDark,
+            onPressed: () => Navigator.of(context).maybePop(),
+            tooltip: 'Retour',
+          ),
+          const Expanded(
+            child: Text(
+              'Mon dossier médical',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: _primaryDark,
+              ),
+            ),
+          ),
+          Material(
+            color: _primaryDark,
+            shape: const CircleBorder(),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: _uploading ? null : _onAddTapped,
+              child: SizedBox(
+                width: 40,
+                height: 40,
+                child: _uploading
+                    ? const Padding(
+                        padding: EdgeInsets.all(10),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.add_rounded, color: Colors.white, size: 26),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildCategoryBody(MedicalCategory cat) {
-    final list = _itemsForCategory(cat);
-    final hint = cat.hint;
+  Widget _buildFilterChips() {
+    return SizedBox(
+      height: 40,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        children: [
+          _FilterChip(
+            label: 'Tout',
+            selected: _filterCategory == null,
+            onTap: () => setState(() => _filterCategory = null),
+          ),
+          for (final c in MedicalCategory.values)
+            _FilterChip(
+              label: c.label,
+              selected: _filterCategory == c,
+              onTap: () => setState(() => _filterCategory = c),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDocumentCard(Map<String, dynamic> it) {
+    final id = it['id']?.toString() ?? '';
+    final selected = _selectedIds.contains(id);
+    final iconColor = _iconAccentForFile(it);
+    final iconBg = _iconBgForFile(it);
+    final typeLabel = _fileTypeLabel(it);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => _openInAppViewer(it),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 14, 10, 14),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: iconBg,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    _iconForFilename(
+                      it['filename']?.toString() ?? '',
+                      (it['type']?.toString() ?? '') == 'image',
+                    ),
+                    color: iconColor,
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _displayName(it),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                          color: _primaryDark,
+                          height: 1.25,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: _chipInactive,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              typeLabel,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: _mutedText,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            _cardDate(it),
+                            style: const TextStyle(fontSize: 12, color: _mutedText),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                PopupMenuButton<String>(
+                  icon: Icon(Icons.more_vert_rounded, color: _primaryDark.withValues(alpha: 0.7)),
+                  onSelected: (value) {
+                    if (value == 'open') {
+                      _openInAppViewer(it);
+                    } else if (value == 'delete') {
+                      _deleteItem(it);
+                    }
+                  },
+                  itemBuilder: (ctx) => const [
+                    PopupMenuItem(value: 'open', child: Text('Ouvrir')),
+                    PopupMenuItem(value: 'delete', child: Text('Supprimer')),
+                  ],
+                ),
+                GestureDetector(
+                  onTap: () => _toggleSelection(id),
+                  behavior: HitTestBehavior.opaque,
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 4, right: 4),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      width: 26,
+                      height: 26,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: selected ? _primaryDark : Colors.transparent,
+                        border: Border.all(
+                          color: selected ? _primaryDark : const Color(0xFFCBD5E1),
+                          width: 2,
+                        ),
+                      ),
+                      child: selected
+                          ? const Icon(Icons.check_rounded, size: 16, color: Colors.white)
+                          : null,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDocumentsList() {
+    final list = _visibleItems();
+    final hint = _filterCategory?.hint ??
+        'Sélectionnez les documents de santé que vous souhaitez transmettre en toute sécurité.';
 
     if (list.isEmpty) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
         children: [
           Icon(Icons.folder_open_rounded, size: 56, color: Colors.grey.shade400),
           const SizedBox(height: 12),
           Text(
-            'Aucun document dans « ${cat.label} ».',
+            _filterCategory == null
+                ? 'Aucun document dans votre dossier.'
+                : 'Aucun document dans « ${_filterCategory!.label} ».',
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.grey.shade600, fontWeight: FontWeight.w600),
           ),
@@ -908,73 +831,205 @@ class _DossierMedicalPageState extends State<DossierMedicalPage>
       );
     }
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 88),
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: Text(hint, style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
-        ),
-        for (final it in list)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Material(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () => _openInAppViewer(it),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Icon(
-                          _iconForFilename(
-                            it['filename']?.toString() ?? '',
-                            (it['type']?.toString() ?? '') == 'image',
-                          ),
-                          color: _primaryDark,
-                          size: 28,
-                        ),
+    return ListView.builder(
+      padding: EdgeInsets.fromLTRB(16, 4, 16, _selectedIds.isNotEmpty ? 12 : 24),
+      itemCount: list.length,
+      itemBuilder: (_, i) => _buildDocumentCard(list[i]),
+    );
+  }
+
+  Widget _buildShareBottomBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: SafeArea(
+        top: false,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            gradient: const LinearGradient(
+              colors: [
+                Color(0xFFE8719A),
+                Color(0xFF3B5998),
+              ],
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF3B5998).withValues(alpha: 0.22),
+                blurRadius: 14,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(999),
+              onTap: () => _openShareModal(initialSelection: _selectedIds),
+              child: SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: const [
+                    Text(
+                      'Partager avec un médecin',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _displayName(it),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontWeight: FontWeight.w600),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${_categoryLabel(it['category']?.toString())} • ${_dateLine(it)} • ${_fmtSize(it['size'] as num?)}',
-                              maxLines: 2,
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Supprimer',
-                        onPressed: () => _deleteItem(it),
-                        icon: Icon(
-                          Icons.delete_outline_rounded,
-                          color: _accent.withValues(alpha: 0.9),
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                    SizedBox(width: 10),
+                    Icon(Icons.send_rounded, color: Colors.white, size: 22),
+                  ],
                 ),
               ),
             ),
           ),
-      ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _surface,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildHeader(),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator(color: _primaryDark))
+                  : _error != null
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Text(_error!, textAlign: TextAlign.center),
+                          ),
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const Padding(
+                              padding: EdgeInsets.fromLTRB(20, 8, 20, 6),
+                              child: Text(
+                                'Partager mon dossier',
+                                style: TextStyle(
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.w800,
+                                  color: _primaryDark,
+                                  height: 1.15,
+                                ),
+                              ),
+                            ),
+                            const Padding(
+                              padding: EdgeInsets.fromLTRB(20, 0, 20, 16),
+                              child: Text(
+                                'Sélectionnez les documents de santé que vous souhaitez transmettre en toute sécurité.',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: _mutedText,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              child: TextField(
+                                controller: _searchCtrl,
+                                onChanged: (_) => setState(() {}),
+                                decoration: InputDecoration(
+                                  hintText: 'Rechercher un document...',
+                                  hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 14),
+                                  prefixIcon: Icon(Icons.search_rounded, color: Colors.grey.shade500),
+                                  filled: true,
+                                  fillColor: _searchFill,
+                                  contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            _buildFilterChips(),
+                            const SizedBox(height: 8),
+                            Expanded(
+                              child: RefreshIndicator(
+                                color: _primaryDark,
+                                onRefresh: _load,
+                                child: _buildDocumentsList(),
+                              ),
+                            ),
+                          ],
+                        ),
+            ),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) {
+                return SizeTransition(
+                  sizeFactor: animation,
+                  axisAlignment: -1,
+                  child: FadeTransition(opacity: animation, child: child),
+                );
+              },
+              child: (!_loading && _error == null && _selectedIds.isNotEmpty)
+                  ? KeyedSubtree(
+                      key: const ValueKey('share-visible'),
+                      child: _buildShareBottomBar(),
+                    )
+                  : const SizedBox.shrink(key: ValueKey('share-hidden')),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  const _FilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  static const Color _primaryDark = HeadsAppColors.brandPrimary;
+  static const Color _chipInactive = Color(0xFFE8EEF5);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: Material(
+        color: selected ? _primaryDark : _chipInactive,
+        borderRadius: BorderRadius.circular(24),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: selected ? Colors.white : _primaryDark,
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

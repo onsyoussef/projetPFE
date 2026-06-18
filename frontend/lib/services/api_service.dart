@@ -71,6 +71,7 @@ class ApiService {
   static String resolveMediaUrl(String? path) {
     if (path == null || path.isEmpty) return '';
     var p = path.trim();
+    if (p.isEmpty) return '';
     if (!p.startsWith('http://') && !p.startsWith('https://')) {
       final base = _baseUrl.endsWith('/')
           ? _baseUrl.substring(0, _baseUrl.length - 1)
@@ -79,6 +80,12 @@ class ApiService {
     }
     p = _cloudinaryInlineDeliveryUrl(p);
     return _chatImageDeliveryUrl(p);
+  }
+
+  /// Comme [resolveMediaUrl] mais `null` si l’URL est vide (évite `NetworkImage("")`).
+  static String? resolveMediaUrlOrNull(String? path) {
+    final url = resolveMediaUrl(path);
+    return url.isEmpty ? null : url;
   }
 
   /// Optimisation livraison images Cloudinary (alignée backend : q_auto, f_auto, largeur max).
@@ -1353,6 +1360,36 @@ class ApiService {
           .toList();
     }
     throw Exception((data as Map<String, dynamic>)['message'] ?? 'Erreur alertes tension');
+  }
+
+  static Future<Map<String, dynamic>> postBloodPressureMeasurement({
+    required String patientId,
+    required int systolic,
+    required int diastolic,
+    int? heartRate,
+    String source = 'ble_esp32',
+    String? deviceName,
+    DateTime? measuredAt,
+  }) async {
+    final uri = Uri.parse('$_baseUrl/patient/blood-pressure/measurements');
+    final response = await http.post(
+      uri,
+      headers: _jsonHeadersWithAuth(),
+      body: jsonEncode({
+        'patientId': patientId,
+        'systolic': systolic,
+        'diastolic': diastolic,
+        if (heartRate != null) 'heartRate': heartRate,
+        'source': source,
+        if (deviceName != null && deviceName.isNotEmpty) 'deviceName': deviceName,
+        if (measuredAt != null) 'measuredAt': measuredAt.toUtc().toIso8601String(),
+      }),
+    );
+    final data = jsonDecode(response.body);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return Map<String, dynamic>.from(data as Map);
+    }
+    throw Exception((data as Map<String, dynamic>)['message'] ?? 'Erreur envoi mesure');
   }
 
 }

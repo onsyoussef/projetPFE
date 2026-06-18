@@ -15,12 +15,14 @@ class OutgoingCallScreen extends StatefulWidget {
     required this.displayName,
     this.isVideoCall = false,
     this.avatarUrl,
+    this.specialty,
   });
 
   final CallProvider callProvider;
   final String displayName;
   final bool isVideoCall;
   final String? avatarUrl;
+  final String? specialty;
 
   @override
   State<OutgoingCallScreen> createState() => _OutgoingCallScreenState();
@@ -89,6 +91,7 @@ class _OutgoingCallScreenState extends State<OutgoingCallScreen> {
             callProvider: p,
             displayName: widget.displayName,
             avatarUrl: widget.avatarUrl,
+            specialty: widget.specialty,
             isVideoCall: widget.isVideoCall,
           ),
         ),

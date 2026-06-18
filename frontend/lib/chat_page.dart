@@ -19,6 +19,7 @@ import 'providers/call_provider.dart';
 import 'widgets/heads_form_cta_button.dart';
 import 'widgets/call_log_bubble.dart';
 import 'widgets/patient_prescription_message_card.dart';
+import 'widgets/teleconsult_sent_dialog.dart';
 import 'widgets/waiting_room_banner.dart';
 import 'widgets/waiting_room_screen.dart';
 import 'utils/chat_attachment_open.dart';
@@ -388,6 +389,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         builder: (_) => WaitingRoomScreen(
           consultationTime: t,
           doctorName: _doctorDisplayName,
+          doctorSpecialty: _doctorSpecialty,
           doctorAvatarUrl: _resolvedDoctorPhotoUrl(),
           onLeaveRoom: _leaveWaitingRoom,
           onSyncUnload: () {
@@ -451,6 +453,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   /// Icônes appel (patient) : toujours désactivées — seul le médecin initie.
   Widget _patientCallBarIconButton({
     required IconData icon,
+    Color iconColor = const Color(0xFF1A458B),
   }) {
     const tooltip = 'L\'appel est réservé au médecin';
     return Tooltip(
@@ -459,10 +462,25 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         onPressed: null,
         mouseCursor: SystemMouseCursors.forbidden,
         style: IconButton.styleFrom(
-          foregroundColor: Colors.white,
-          disabledForegroundColor: Colors.white.withValues(alpha: 0.38),
+          foregroundColor: iconColor,
+          disabledForegroundColor: iconColor.withValues(alpha: 0.35),
         ),
         icon: Icon(icon),
+      ),
+    );
+  }
+
+  Widget _buildChatPatternBackground() {
+    return Container(
+      color: const Color(0xFFE8ECF0),
+      child: Opacity(
+        opacity: 0.14,
+        child: Image.asset(
+          'assets/images/chat_medical_pattern.png',
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: double.infinity,
+        ),
       ),
     );
   }
@@ -1343,6 +1361,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                               await _loadMessages();
                               if (!ctx.mounted) return;
                               Navigator.of(ctx).pop();
+                              if (!mounted) return;
+                              await showTeleconsultSentDialog(
+                                context,
+                                kind: TeleconsultSentDialogKind.request,
+                                patientId: widget.patientId,
+                              );
                             },
                           )
                         else
@@ -1357,6 +1381,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                               await _loadMessages();
                               if (!ctx.mounted) return;
                               Navigator.of(ctx).pop();
+                              if (!mounted) return;
+                              await showTeleconsultSentDialog(
+                                context,
+                                kind: TeleconsultSentDialogKind.form,
+                                patientId: widget.patientId,
+                              );
                             },
                           ),
                       ],
@@ -1897,7 +1927,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    const skyBlue = HeadsAppColors.brandPrimary;
+    const skyBlue = Color(0xFF1A458B);
+    const chatNavy = Color(0xFF1A458B);
 
     final isDoctorAvailable = _doctorStatus == 'available';
     final showDoctorOnlineDot = isDoctorAvailable;
@@ -1910,7 +1941,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         ? const Color(0xFFF59E0B)
         : (_doctorStatus == 'unavailable'
             ? const Color(0xFF9CA3AF)
-            : Colors.white);
+            : const Color(0xFF22C55E));
     final waitingRoomBanner = _waitingRoomBannerData();
 
     // Important : ne pas intercepter le retour pour effacer la session ici.
@@ -1919,13 +1950,16 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     return PopScope(
       canPop: true,
       child: Scaffold(
-      backgroundColor: HeadsAppColors.surfaceAlt,
+      backgroundColor: const Color(0xFFE8ECF0),
       appBar: AppBar(
-        backgroundColor: HeadsAppColors.brandPrimary,
-        foregroundColor: Colors.white,
+        backgroundColor: Colors.white,
+        foregroundColor: chatNavy,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
         automaticallyImplyLeading: false,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+          color: chatNavy,
           onPressed: () async {
             final prefs = await SharedPreferences.getInstance();
             await prefs.remove('lastRoute');
@@ -1961,13 +1995,13 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 doctorAvatarForPatient(
                   name: _doctorDisplayName,
                   doctorPhotoPath: _doctorPhotoPath,
-                  radius: 16,
-                  backgroundColor: Colors.white,
-                  accentColor: HeadsAppColors.brandPrimary,
+                  radius: 18,
+                  backgroundColor: const Color(0xFFF0F4F8),
+                  accentColor: chatNavy,
                   fallbackChild: const Icon(
                     Icons.person_rounded,
-                    color: HeadsAppColors.brandPrimary,
-                    size: 18,
+                    color: chatNavy,
+                    size: 20,
                   ),
                 ),
                 if (showDoctorOnlineDot)
@@ -1975,12 +2009,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     right: -1,
                     bottom: -1,
                     child: Container(
-                      width: 10,
-                      height: 10,
+                      width: 11,
+                      height: 11,
                       decoration: BoxDecoration(
                         color: const Color(0xFF22C55E),
                         shape: BoxShape.circle,
-                        border: Border.all(color: skyBlue, width: 1.5),
+                        border: Border.all(color: Colors.white, width: 2),
                       ),
                     ),
                   ),
@@ -1995,7 +2029,11 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   Text(
                     _doctorDisplayName,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF111827),
+                      fontSize: 15,
+                    ),
                   ),
                   const SizedBox(height: 2),
                   if (doctorStatusSubtitle.isNotEmpty)
@@ -2014,12 +2052,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           ],
         ),
         actions: [
-          _patientCallBarIconButton(icon: Icons.call_rounded),
           _patientCallBarIconButton(icon: Icons.videocam_rounded),
+          _patientCallBarIconButton(icon: Icons.call_rounded),
           if (_conversationId != null)
             IconButton(
               tooltip: PrescriptionHistoryStrings.tooltipHistory,
-              icon: const Icon(Icons.history_rounded),
+              icon: const Icon(Icons.history_rounded, color: chatNavy),
               onPressed: () {
                 final cid = _conversationId;
                 if (cid == null) return;
@@ -2027,16 +2065,33 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               },
             ),
           IconButton(
-            icon: const Icon(Icons.info_outline_rounded),
+            icon: const Icon(Icons.info_outline_rounded, color: chatNavy),
             onPressed: _openConversationInfoPanel,
           ),
         ],
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(1),
+          child: Divider(height: 1, thickness: 1, color: Color(0xFFE5E7EB)),
+        ),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? Stack(
+              children: [
+                Positioned.fill(child: _buildChatPatternBackground()),
+                const Center(child: CircularProgressIndicator()),
+              ],
+            )
           : _error != null
-              ? Center(child: Text(_error!))
-                : Column(
+              ? Stack(
+                  children: [
+                    Positioned.fill(child: _buildChatPatternBackground()),
+                    Center(child: Text(_error!)),
+                  ],
+                )
+                : Stack(
+                  children: [
+                    Positioned.fill(child: _buildChatPatternBackground()),
+                    Column(
                   children: [
                     if (!isDoctorAvailable &&
                         _doctorAutoReplyEnabled &&
@@ -2126,10 +2181,16 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                                         _isChatClosed) {
                                       return const SizedBox.shrink();
                                     }
-                                    inner = _QuestionPhysiqueCard(
-                                      onAnswered: (hasConsulted) {
-                                        _handleQuestionAnswer(hasConsulted);
-                                      },
+                                    return Column(
+                                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                                      children: [
+                                        const _PatientDateChip(label: 'Aujourd\'hui'),
+                                        _QuestionPhysiqueCard(
+                                          onAnswered: (hasConsulted) {
+                                            _handleQuestionAnswer(hasConsulted);
+                                          },
+                                        ),
+                                      ],
                                     );
                                   } else if (type == 'accept_request') {
                                     inner = const _InfoBubble(
@@ -2206,7 +2267,10 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                                             conversationId: _conversationId,
                                           );
                                   } else {
-                                    inner = _TextBubble(msg: msg);
+                                    inner = _TextBubble(
+                                      msg: msg,
+                                      doctorDisplayName: _doctorDisplayName,
+                                    );
                                   }
 
                                   if (dateLine == null) return inner;
@@ -2232,6 +2296,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                         child: _buildPostAcceptFillFormCard(),
                       ),
                     _buildInputBar(skyBlue),
+                  ],
+                ),
                   ],
                 ),
       ),
@@ -2505,31 +2571,40 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     // on n'affiche QUE le message explicatif, pas le champ de saisie.
     if (!_canSendMessages) {
       return Container(
-        padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
         color: Colors.white,
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 6),
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: const Color(0xFFFFF7E6),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFF59E0B)),
-          ),
-          child: Row(
-            children: const [
-              Icon(Icons.info_outline_rounded,
-                  size: 18, color: Color(0xFFF59E0B)),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Si votre demande est acceptée, complétez d’abord le formulaire de téléconsultation. Vous pourrez écrire au médecin après envoi du formulaire et lorsque la conversation sera ouverte (réponse ou créneau du médecin).',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF92400E),
+        child: SafeArea(
+          top: false,
+          child: Container(
+            width: double.infinity,
+            margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE3F2FD),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              border: Border.all(color: const Color(0xFF90CAF9)),
+            ),
+            child: const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.info_outline_rounded,
+                  size: 20,
+                  color: Color(0xFF1A458B),
+                ),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Si votre demande est acceptée, complétez d’abord le formulaire de téléconsultation. Vous pourrez écrire au médecin après envoi du formulaire et lorsque la conversation sera ouverte (réponse ou créneau du médecin).',
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.45,
+                      color: Color(0xFF1A458B),
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       );
@@ -2796,40 +2871,99 @@ class _QuestionPhysiqueCard extends StatelessWidget {
 
   final ValueChanged<bool> onAnswered;
 
+  static const Color _navy = Color(0xFF1A458B);
+
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Avez‑vous déjà eu une consultation physique avec ce médecin ?',
-              style: TextStyle(fontWeight: FontWeight.w600),
+      padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.07),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Avez-vous déjà eu une consultation physique avec ce médecin ?',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: _navy,
+              fontSize: 16,
+              height: 1.35,
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: FilledButton(
-                    onPressed: () => onAnswered(true),
-                    child: const Text('Oui, déjà consulté'),
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(999),
+                    gradient: const LinearGradient(
+                      colors: [
+                        Color(0xFFE8719A),
+                        Color(0xFF3B5998),
+                      ],
+                    ),
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () => onAnswered(true),
+                      borderRadius: BorderRadius.circular(999),
+                      child: const SizedBox(
+                        height: 46,
+                        child: Center(
+                          child: Text(
+                            'Oui, déjà consulté',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13.5,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => onAnswered(false),
-                    child: const Text('Non, première fois'),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => onAnswered(false),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _navy,
+                    backgroundColor: Colors.white,
+                    side: const BorderSide(color: Color(0xFFB3D4F5), width: 1.5),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                  child: const Text(
+                    'Non, première fois',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13.5,
+                    ),
                   ),
                 ),
-              ],
-            ),
-          ],
-        ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -2869,12 +3003,6 @@ class _TeleconsultRequestCardState extends State<_TeleconsultRequestCard> {
         letterBody: kTeleconsultFirstRequestLetterBody,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Demande de téléconsultation envoyée au médecin.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
       await widget.onSubmitted();
     } catch (e) {
       if (!mounted) return;
@@ -3114,12 +3242,6 @@ class _TeleconsultFormCardState extends State<_TeleconsultFormCard> {
         setState(() => _formAttachmentQueue.clear());
       }
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Formulaire de téléconsultation envoyé.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
       await widget.onSubmitted();
     } catch (e) {
       if (!mounted) return;
@@ -4035,20 +4157,20 @@ class _PatientDateChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Center(
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           decoration: BoxDecoration(
-            color: Colors.grey.shade200,
+            color: const Color(0xFFD1D5DB).withValues(alpha: 0.55),
             borderRadius: BorderRadius.circular(999),
           ),
           child: Text(
             label,
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: Colors.grey.shade800,
+              color: Color(0xFF4B5563),
             ),
           ),
         ),
@@ -4138,10 +4260,38 @@ String _doctorMessageLevelForPatient(Map<String, dynamic>? payload) {
   }
 }
 
+/// Horodatage court sous les bulles (ex. « À l'instant »).
+String _formatBubbleTimestamp(Map<String, dynamic> msg) {
+  final raw = msg['createdAt'];
+  if (raw is! String) return '';
+  final dt = DateTime.tryParse(raw)?.toLocal();
+  if (dt == null) return '';
+  final now = DateTime.now();
+  final diff = now.difference(dt);
+  if (diff.inMinutes < 1) return 'À l\'instant';
+  if (diff.inHours < 1) return 'Il y a ${diff.inMinutes} min';
+  if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
+    return DateFormat('HH:mm').format(dt);
+  }
+  return DateFormat('dd/MM HH:mm').format(dt);
+}
+
+String _doctorBubbleDisplayName(String fullName) {
+  final trimmed = fullName.trim();
+  if (trimmed.isEmpty) return 'Dr. —';
+  final lower = trimmed.toLowerCase();
+  if (lower.startsWith('dr.') || lower.startsWith('dr ')) return trimmed;
+  return 'Dr. $trimmed';
+}
+
 class _TextBubble extends StatelessWidget {
-  const _TextBubble({required this.msg});
+  const _TextBubble({
+    required this.msg,
+    required this.doctorDisplayName,
+  });
 
   final Map<String, dynamic> msg;
+  final String doctorDisplayName;
 
   @override
   Widget build(BuildContext context) {
@@ -4153,102 +4303,167 @@ class _TextBubble extends StatelessWidget {
     final rawRead = msg['readAt'];
     final readStr = rawRead?.toString();
     final isRead = readStr != null && readStr.trim().isNotEmpty;
+    final timestamp = _formatBubbleTimestamp(msg);
+    final maxWidth = MediaQuery.of(context).size.width * 0.78;
 
     final level = isDoctor ? _doctorMessageLevelForPatient(payload) : 'normal';
 
     late final Color doctorBg;
-    late final Color doctorBorder;
-    late final double borderWidth;
-    late final IconData badgeIcon;
-    late final String badgeText;
+    late final Color doctorLeftBorder;
+    late final String? importanceTag;
 
     switch (level) {
       case 'urgent':
-        doctorBg = const Color(0xFFE1395F);
-        doctorBorder = const Color(0xFFB71C1C);
-        borderWidth = 2;
-        badgeIcon = Icons.priority_high_rounded;
-        badgeText = 'Très important';
+        doctorBg = const Color(0xFFFFF5F5);
+        doctorLeftBorder = const Color(0xFFDC2626);
+        importanceTag = 'TRÈS IMPORTANT';
         break;
       case 'medium':
-        doctorBg = const Color(0xFFFF9800);
-        doctorBorder = const Color(0xFFE65100);
-        borderWidth = 1.5;
-        badgeIcon = Icons.error_outline_rounded;
-        badgeText = 'Important';
+        doctorBg = const Color(0xFFFFF7ED);
+        doctorLeftBorder = const Color(0xFFEA580C);
+        importanceTag = 'IMPORTANT';
         break;
       default:
-        // Même palette que côté médecin pour "normal".
-        doctorBg = const Color(0xFF16A34A);
-        doctorBorder = const Color(0xFF166534);
-        borderWidth = 1;
-        badgeIcon = Icons.check_circle_outline_rounded;
-        badgeText = 'Normal';
+        doctorBg = const Color(0xFFF8FAFC);
+        doctorLeftBorder = const Color(0xFF22C55E);
+        importanceTag = null;
         break;
     }
 
-    final bgColor = isDoctor
-        ? doctorBg
-        : (isPatient ? const Color(0xFF87CEEB) : const Color(0xFFF1F5F9));
-    final textColor = (isDoctor || isPatient)
-        ? Colors.white
-        : const Color(0xFF0F172A);
+    if (isDoctor) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (importanceTag != null)
+            Container(
+              margin: const EdgeInsets.only(bottom: 6, left: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: level == 'urgent'
+                    ? const Color(0xFFFCE7F3)
+                    : const Color(0xFFFFEDD5),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                importanceTag,
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
+                  color: level == 'urgent'
+                      ? const Color(0xFF991B1B)
+                      : const Color(0xFF9A3412),
+                ),
+              ),
+            ),
+          Container(
+            constraints: BoxConstraints(maxWidth: maxWidth),
+            margin: const EdgeInsets.only(bottom: 4),
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            decoration: BoxDecoration(
+              color: doctorBg,
+              borderRadius: BorderRadius.circular(14),
+              border: Border(
+                left: BorderSide(color: doctorLeftBorder, width: 5),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _doctorBubbleDisplayName(doctorDisplayName),
+                  style: const TextStyle(
+                    color: Color(0xFF1A458B),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13.5,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  (msg['content'] as String?) ?? '',
+                  style: const TextStyle(
+                    color: Color(0xFF111827),
+                    height: 1.4,
+                    fontSize: 14.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (timestamp.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10, left: 2),
+              child: Text(
+                timestamp,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+        ],
+      );
+    }
+
+    final bgColor = isPatient
+        ? const Color(0xFF3B82F6)
+        : const Color(0xFFF1F5F9);
+    final textColor = isPatient ? Colors.white : const Color(0xFF0F172A);
 
     return Column(
       crossAxisAlignment: align,
       children: [
         Container(
-          margin: const EdgeInsets.only(bottom: 8),
+          constraints: BoxConstraints(maxWidth: maxWidth),
+          margin: const EdgeInsets.only(bottom: 4),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
             color: bgColor,
             borderRadius: BorderRadius.circular(16),
-            border: isDoctor
-                ? Border.all(color: doctorBorder, width: borderWidth)
-                : null,
           ),
-          child: Column(
-            crossAxisAlignment: isDoctor ? CrossAxisAlignment.start : align,
-            children: [
-              if (isDoctor) ...[
-                Container(
-                  margin: const EdgeInsets.only(bottom: 6),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.22),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(badgeIcon, size: 14, color: Colors.white),
-                      const SizedBox(width: 4),
-                      Text(
-                        badgeText,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-              Text(
-                (msg['content'] as String?) ?? '',
-                style: TextStyle(color: textColor, height: 1.25),
-              ),
-            ],
+          child: Text(
+            (msg['content'] as String?) ?? '',
+            style: TextStyle(color: textColor, height: 1.25),
           ),
         ),
-        if (isPatient)
+        if (isPatient) ...[
           Padding(
             padding: const EdgeInsets.only(bottom: 4, right: 2),
-            child: Icon(
-              isRead ? Icons.done_all_rounded : Icons.done_rounded,
-              size: 15,
-              color: isRead ? const Color(0xFF4FA8D5) : Colors.grey.shade500,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (timestamp.isNotEmpty) ...[
+                  Text(
+                    timestamp,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                Icon(
+                  isRead ? Icons.done_all_rounded : Icons.done_rounded,
+                  size: 15,
+                  color: isRead ? const Color(0xFF4FA8D5) : Colors.grey.shade500,
+                ),
+              ],
+            ),
+          ),
+        ] else if (timestamp.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              timestamp,
+              style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600),
             ),
           ),
       ],

@@ -10,10 +10,12 @@ import 'services/notification_service.dart';
 import 'services/push_notification_service.dart';
 import 'login_page.dart';
 import 'bloc_urgence_page.dart';
+import 'screens/emergency_dashboard_screen.dart';
+import 'services/emergency_mode_service.dart';
 import 'chat_page.dart';
 import 'choix_medecin_page.dart';
-import 'dossier_medical_page.dart';
 import 'discussions_patient_page.dart';
+import 'dossier_medical_page.dart';
 import 'espace_patient_page.dart';
 import 'rendezvous_patient_page.dart';
 import 'screens/blood_pressure_screen.dart';
@@ -184,6 +186,11 @@ class _RootRouterState extends State<_RootRouter> {
             home = BloodPressureScreen(
               patientId: session['id']!,
               patientName: session['name'] ?? 'Patient',
+            );
+          } else if (lastRoute == EmergencyModeService.lastRouteKey) {
+            home = EmergencyDashboardScreen(
+              patientName: session['name'] ?? 'Patient',
+              patientId: session['id']!,
             );
           } else {
             home = BlocUrgencePage(

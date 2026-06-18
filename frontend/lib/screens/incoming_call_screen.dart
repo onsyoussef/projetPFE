@@ -20,6 +20,7 @@ class IncomingCallScreen extends StatefulWidget {
     required this.offer,
     this.isVideoCall = false,
     this.avatarUrl,
+    this.specialty,
   });
 
   final CallProvider callProvider;
@@ -29,6 +30,7 @@ class IncomingCallScreen extends StatefulWidget {
   final Map<String, dynamic> offer;
   final bool isVideoCall;
   final String? avatarUrl;
+  final String? specialty;
 
   @override
   State<IncomingCallScreen> createState() => _IncomingCallScreenState();
@@ -169,6 +171,7 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> {
                               callProvider: widget.callProvider,
                               displayName: widget.displayName,
                               avatarUrl: widget.avatarUrl,
+                              specialty: widget.specialty,
                               isVideoCall: widget.isVideoCall,
                             ),
                           ),

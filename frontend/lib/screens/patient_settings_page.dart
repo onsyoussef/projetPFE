@@ -62,11 +62,7 @@ class _PatientSettingsPageState extends State<PatientSettingsPage> {
     await prefs.setString(PatientSettingsPage.languagePrefKey, code);
   }
 
-  String? _photoUrl() {
-    final url = ApiService.resolveMediaUrl(_photoPath);
-    if (url.isEmpty) return null;
-    return url;
-  }
+  String? _photoUrl() => ApiService.resolveMediaUrlOrNull(_photoPath);
 
   Future<void> _openProfile() async {
     final result = await Navigator.of(context).push<Map<String, String?>>(

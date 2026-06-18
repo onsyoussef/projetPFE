@@ -3,7 +3,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 import 'espace_patient_page.dart';
-import 'headsapp_theme.dart';
 import 'services/api_service.dart';
 import 'utils/patient_ui_utils.dart';
 
@@ -40,8 +39,11 @@ class _RendezVousPatientBody extends StatefulWidget {
 }
 
 class _RendezVousPatientBodyState extends State<_RendezVousPatientBody> {
-  static const Color _primary = HeadsAppColors.brandPrimary;
-  static const Color _bg = HeadsAppColors.surfaceAlt;
+  static const Color _titleNavy = Color(0xFF1A458B);
+  static const Color _pageBg = Color(0xFFF1F5F9);
+  static const Color _chipBlue = Color(0xFF4A90E2);
+  static const Color _chipCyan = Color(0xFF26A69A);
+  static const Color _chipGrey = Color(0xFF9CA3AF);
 
   bool _loading = true;
   String? _error;
@@ -212,185 +214,256 @@ class _RendezVousPatientBodyState extends State<_RendezVousPatientBody> {
     final legendDays = daysWithAppointments.take(7).toList();
 
     return Scaffold(
-      backgroundColor: _bg,
-      appBar: AppBar(
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        backgroundColor: _primary,
-        foregroundColor: Colors.white,
-        title: const Text(
-          'Mes rendez-vous',
-          style: TextStyle(fontWeight: FontWeight.w700),
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded),
-          onPressed: () async {
-            final prefs = await SharedPreferences.getInstance();
-            await prefs.setString('lastRoute', 'espace_patient');
-            if (!context.mounted) return;
-            final didPop = await Navigator.of(context).maybePop();
-            if (didPop || !context.mounted) return;
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute<void>(
-                builder: (_) => EspacePatientPage(
-                  patientId: widget.patientId,
-                  patientName: widget.patientName,
-                ),
-              ),
-            );
-          },
-        ),
-      ),
-      body: RefreshIndicator(
-        onRefresh: _load,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
+      backgroundColor: _pageBg,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Container(
-              padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    _primary.withValues(alpha: 0.20),
-                    const Color(0xFF8B5CF6).withValues(alpha: 0.16),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: _primary.withValues(alpha: 0.28)),
-              ),
-              child: Row(
+              color: Colors.white,
+              padding: const EdgeInsets.fromLTRB(4, 4, 12, 12),
+              child: Stack(
+                alignment: Alignment.center,
                 children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.9),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.calendar_month_rounded,
-                      color: _primary,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Bonjour ${readablePatientName(widget.patientName)}, consultez votre planning de téléconsultation fixé par le médecin.',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: const Color(0xFF0F172A),
-                            fontWeight: FontWeight.w600,
-                            height: 1.3,
-                          ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: TableCalendar<Map<String, dynamic>>(
-                firstDay: DateTime.now().subtract(const Duration(days: 365)),
-                lastDay: DateTime.now().add(const Duration(days: 730)),
-                focusedDay: _focusedDay,
-                selectedDayPredicate: (day) => isSameDay(day, _selectedDay),
-                onDaySelected: (selectedDay, focusedDay) {
-                  setState(() {
-                    _selectedDay = selectedDay;
-                    _focusedDay = focusedDay;
-                  });
-                },
-                onPageChanged: (focusedDay) {
-                  _focusedDay = focusedDay;
-                },
-                eventLoader: _eventsForDay,
-                headerStyle: const HeaderStyle(
-                  formatButtonVisible: false,
-                  titleCentered: true,
-                ),
-                calendarStyle: CalendarStyle(
-                  todayDecoration: BoxDecoration(
-                    color: _primary.withValues(alpha: 0.24),
-                    shape: BoxShape.circle,
-                  ),
-                  selectedDecoration: const BoxDecoration(
-                    color: _primary,
-                    shape: BoxShape.circle,
-                  ),
-                  markerDecoration: const BoxDecoration(
-                    color: Color(0xFF8B5CF6),
-                    shape: BoxShape.circle,
-                  ),
-                  markerSize: 6,
-                  markersMaxCount: 3,
-                ),
-                calendarBuilders: CalendarBuilders<Map<String, dynamic>>(
-                  markerBuilder: (context, day, events) {
-                    if (events.isEmpty) return const SizedBox.shrink();
-                    final count = events.length > 3 ? 3 : events.length;
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: List.generate(count, (index) {
-                          return Container(
-                            width: 5.5,
-                            height: 5.5,
-                            margin: const EdgeInsets.symmetric(horizontal: 1.3),
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF8B5CF6),
-                              shape: BoxShape.circle,
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: IconButton(
+                      icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+                      color: _titleNavy,
+                      onPressed: () async {
+                        final prefs = await SharedPreferences.getInstance();
+                        await prefs.setString('lastRoute', 'espace_patient');
+                        if (!context.mounted) return;
+                        final didPop = await Navigator.of(context).maybePop();
+                        if (didPop || !context.mounted) return;
+                        Navigator.of(context).pushReplacement(
+                          MaterialPageRoute<void>(
+                            builder: (_) => EspacePatientPage(
+                              patientId: widget.patientId,
+                              patientName: widget.patientName,
                             ),
-                          );
-                        }),
-                      ),
-                    );
-                  },
-                ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  Text(
+                    'Mes rendez-vous',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          color: _titleNavy,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 20,
+                          letterSpacing: -0.2,
+                        ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _Badge(
-                  icon: Icons.calendar_today_rounded,
-                  text: 'Date: ${_fmtDate(_selectedDay)}',
-                  color: _primary,
-                ),
-                _Badge(
-                  icon: Icons.event_note_rounded,
-                  text: '${_slotsSelectedDay.length} rendez-vous ce jour',
-                  color: const Color(0xFF8B5CF6),
-                ),
-                _Badge(
-                  icon: Icons.checklist_rounded,
-                  text: '${_slots.length} total',
-                  color: const Color(0xFF0EA5E9),
-                ),
-              ],
-            ),
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _load,
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [
+                            Color(0xFFFDECF2),
+                            Color(0xFFE3F2FD),
+                          ],
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                        ),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.calendar_month_rounded,
+                              color: _titleNavy,
+                              size: 24,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Bonjour ${readablePatientName(widget.patientName)}, consultez votre planning de téléconsultation fixé par le médecin.',
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: const Color(0xFF374151),
+                                    fontWeight: FontWeight.w500,
+                                    height: 1.35,
+                                  ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 16,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: TableCalendar<Map<String, dynamic>>(
+                        firstDay: DateTime.now().subtract(const Duration(days: 365)),
+                        lastDay: DateTime.now().add(const Duration(days: 730)),
+                        focusedDay: _focusedDay,
+                        selectedDayPredicate: (day) => isSameDay(day, _selectedDay),
+                        onDaySelected: (selectedDay, focusedDay) {
+                          setState(() {
+                            _selectedDay = selectedDay;
+                            _focusedDay = focusedDay;
+                          });
+                        },
+                        onPageChanged: (focusedDay) {
+                          _focusedDay = focusedDay;
+                        },
+                        eventLoader: _eventsForDay,
+                        headerStyle: HeaderStyle(
+                          formatButtonVisible: false,
+                          titleCentered: true,
+                          titleTextStyle: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                color: const Color(0xFF6B7280),
+                                fontWeight: FontWeight.w600,
+                              ) ??
+                              const TextStyle(
+                                color: Color(0xFF6B7280),
+                                fontWeight: FontWeight.w600,
+                                fontSize: 16,
+                              ),
+                          leftChevronIcon: const Icon(
+                            Icons.chevron_left_rounded,
+                            color: Color(0xFF9CA3AF),
+                          ),
+                          rightChevronIcon: const Icon(
+                            Icons.chevron_right_rounded,
+                            color: Color(0xFF9CA3AF),
+                          ),
+                        ),
+                        daysOfWeekStyle: const DaysOfWeekStyle(
+                          weekdayStyle: TextStyle(
+                            color: Color(0xFF9CA3AF),
+                            fontWeight: FontWeight.w500,
+                            fontSize: 13,
+                          ),
+                          weekendStyle: TextStyle(
+                            color: Color(0xFF9CA3AF),
+                            fontWeight: FontWeight.w500,
+                            fontSize: 13,
+                          ),
+                        ),
+                        calendarStyle: CalendarStyle(
+                          outsideDaysVisible: true,
+                          defaultTextStyle: const TextStyle(
+                            color: Color(0xFF374151),
+                            fontWeight: FontWeight.w500,
+                          ),
+                          weekendTextStyle: const TextStyle(
+                            color: Color(0xFF374151),
+                            fontWeight: FontWeight.w500,
+                          ),
+                          outsideTextStyle: const TextStyle(
+                            color: Color(0xFFD1D5DB),
+                            fontWeight: FontWeight.w400,
+                          ),
+                          todayDecoration: BoxDecoration(
+                            color: _titleNavy.withValues(alpha: 0.12),
+                            shape: BoxShape.circle,
+                          ),
+                          todayTextStyle: const TextStyle(
+                            color: _titleNavy,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          selectedDecoration: const BoxDecoration(
+                            color: _titleNavy,
+                            shape: BoxShape.circle,
+                          ),
+                          selectedTextStyle: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          markerDecoration: const BoxDecoration(
+                            color: _titleNavy,
+                            shape: BoxShape.circle,
+                          ),
+                          markerSize: 6,
+                          markersMaxCount: 3,
+                        ),
+                        calendarBuilders: CalendarBuilders<Map<String, dynamic>>(
+                          markerBuilder: (context, day, events) {
+                            if (events.isEmpty) return const SizedBox.shrink();
+                            final count = events.length > 3 ? 3 : events.length;
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: List.generate(count, (index) {
+                                  return Container(
+                                    width: 5.5,
+                                    height: 5.5,
+                                    margin: const EdgeInsets.symmetric(horizontal: 1.3),
+                                    decoration: const BoxDecoration(
+                                      color: _titleNavy,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  );
+                                }),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _Badge(
+                          icon: Icons.calendar_today_rounded,
+                          text: 'Date: ${_fmtDate(_selectedDay)}',
+                          color: _chipBlue,
+                          backgroundColor: const Color(0xFFE8F4FD),
+                        ),
+                        _Badge(
+                          icon: Icons.event_note_rounded,
+                          text: '${_slotsSelectedDay.length} rendez-vous ce jour',
+                          color: _chipCyan,
+                          backgroundColor: const Color(0xFFE0F7FA),
+                        ),
+                        _Badge(
+                          icon: Icons.checklist_rounded,
+                          text: '${_slots.length} total',
+                          color: _chipGrey,
+                          backgroundColor: const Color(0xFFF3F4F6),
+                          bordered: false,
+                        ),
+                      ],
+                    ),
             if (legendDays.isNotEmpty) ...[
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
               Text(
                 'Jours avec des rendez-vous',
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: const Color(0xFF334155),
+                      color: _titleNavy,
                       fontWeight: FontWeight.w700,
                     ),
               ),
@@ -413,22 +486,20 @@ class _RendezVousPatientBodyState extends State<_RendezVousPatientBody> {
                         ),
                         decoration: BoxDecoration(
                           color: selected
-                              ? _primary.withValues(alpha: 0.14)
+                              ? const Color(0xFFE8F4FD)
                               : Colors.white,
                           borderRadius: BorderRadius.circular(999),
                           border: Border.all(
                             color: selected
-                                ? _primary.withValues(alpha: 0.55)
-                                : const Color(0xFFE2E8F0),
+                                ? _chipBlue.withValues(alpha: 0.45)
+                                : const Color(0xFFE5E7EB),
                           ),
                         ),
                         child: Center(
                           child: Text(
                             '${_weekdayFr(d)} ${_pad2(d.day)} · $n',
                             style: TextStyle(
-                              color: selected
-                                  ? const Color(0xFF0369A1)
-                                  : const Color(0xFF475569),
+                              color: selected ? _titleNavy : const Color(0xFF6B7280),
                               fontWeight:
                                   selected ? FontWeight.w700 : FontWeight.w600,
                               fontSize: 12.5,
@@ -444,15 +515,15 @@ class _RendezVousPatientBodyState extends State<_RendezVousPatientBody> {
                 ),
               ),
             ],
-            const SizedBox(height: 14),
+            const SizedBox(height: 18),
             Text(
               'Rendez-vous du jour',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: const Color(0xFF0F172A),
+                    color: _titleNavy,
                     fontWeight: FontWeight.w800,
                   ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             if (_loading)
               const Padding(
                 padding: EdgeInsets.all(24),
@@ -496,14 +567,18 @@ class _RendezVousPatientBodyState extends State<_RendezVousPatientBody> {
                 );
               }),
             if (!_loading && _error == null && _slots.isNotEmpty) ...[
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
               Text(
                 'Jours avec rendez-vous: ${perDayCount.length}',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: const Color(0xFF64748B),
+                      color: const Color(0xFF9CA3AF),
                     ),
               ),
             ],
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -696,20 +771,26 @@ class _Badge extends StatelessWidget {
     required this.icon,
     required this.text,
     required this.color,
+    this.backgroundColor,
+    this.bordered = true,
   });
 
   final IconData icon;
   final String text;
   final Color color;
+  final Color? backgroundColor;
+  final bool bordered;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.10),
+        color: backgroundColor ?? color.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.22)),
+        border: bordered
+            ? Border.all(color: color.withValues(alpha: 0.28))
+            : null,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -789,36 +870,49 @@ class _EmptyCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Column(
         children: [
-          Icon(icon, size: 30, color: const Color(0xFF64748B)),
-          const SizedBox(height: 8),
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF9FAFB),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFE5E7EB)),
+            ),
+            child: Icon(icon, size: 28, color: const Color(0xFF9CA3AF)),
+          ),
+          const SizedBox(height: 14),
           Text(
             title,
             textAlign: TextAlign.center,
             style: const TextStyle(
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF334155),
+              fontWeight: FontWeight.w800,
+              fontSize: 16,
+              color: Color(0xFF1A458B),
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           Text(
             subtitle,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: Color(0xFF64748B)),
+            style: const TextStyle(
+              color: Color(0xFF6B7280),
+              height: 1.4,
+            ),
           ),
         ],
       ),

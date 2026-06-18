@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../models/blood_pressure_alert.dart';
 import '../models/blood_pressure_measurement.dart';
 import '../services/api_service.dart';
+import '../services/blood_pressure_ble_service.dart';
 
 enum BloodPressureStatus { normal, hypotension, hypertension }
 
@@ -12,14 +13,20 @@ class BloodPressureProvider extends ChangeNotifier {
   BloodPressureProvider({required this.patientId});
 
   final String patientId;
+  final BloodPressureBleService _ble = BloodPressureBleService.instance;
 
   bool loading = true;
   String? error;
-  bool deviceConnected = false;
+  bool bleConnecting = false;
+  String? bleStatusMessage;
+
   BloodPressureMeasurement? latest;
   List<BloodPressureMeasurement> history = <BloodPressureMeasurement>[];
   List<BloodPressureAlert> alerts = <BloodPressureAlert>[];
   Timer? _pollTimer;
+  StreamSubscription<Map<String, int>>? _bleSub;
+
+  bool get bleConnected => _ble.connected;
 
   BloodPressureStatus get status {
     final m = latest;
@@ -30,11 +37,53 @@ class BloodPressureProvider extends ChangeNotifier {
   }
 
   Future<void> initialize() async {
+    _bleSub = _ble.measurements.listen(_onBleMeasurement);
     await refresh();
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(const Duration(seconds: 10), (_) {
-      refresh(silent: true);
+      if (bleConnected) refresh(silent: true);
     });
+  }
+
+  Future<void> connectBle() async {
+    if (bleConnecting || bleConnected) return;
+    bleConnecting = true;
+    error = null;
+    bleStatusMessage = 'Connexion au tensiomètre…';
+    notifyListeners();
+    try {
+      await _ble.connect();
+      bleStatusMessage = _ble.statusMessage;
+    } catch (e) {
+      error = e.toString().replaceFirst('Exception: ', '');
+      bleStatusMessage = null;
+      rethrow;
+    } finally {
+      bleConnecting = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> disconnectBle() async {
+    await _ble.disconnect();
+    bleStatusMessage = null;
+    notifyListeners();
+  }
+
+  Future<void> _onBleMeasurement(Map<String, int> data) async {
+    try {
+      await ApiService.postBloodPressureMeasurement(
+        patientId: patientId,
+        systolic: data['systolic']!,
+        diastolic: data['diastolic']!,
+        heartRate: data['heartRate'],
+        deviceName: _ble.deviceName,
+      );
+      await refresh(silent: true);
+    } catch (e) {
+      error = e.toString().replaceFirst('Exception: ', '');
+      notifyListeners();
+    }
   }
 
   Future<void> refresh({bool silent = false}) async {
@@ -49,7 +98,6 @@ class BloodPressureProvider extends ChangeNotifier {
       final alertsJson = await ApiService.getPatientBloodPressureAlerts(patientId: patientId);
 
       latest = latestJson == null ? null : BloodPressureMeasurement.fromJson(latestJson);
-      deviceConnected = latestJson != null;
       history = historyJson
           .map((e) => BloodPressureMeasurement.fromJson(e))
           .toList()
@@ -61,39 +109,9 @@ class BloodPressureProvider extends ChangeNotifier {
 
       error = null;
     } catch (e) {
-      // Fallback UI de démo pour ne pas bloquer l’intégration frontend
-      final now = DateTime.now();
-      latest = BloodPressureMeasurement(
-        systolic: 132,
-        diastolic: 84,
-        heartRate: 76,
-        measuredAt: now,
-      );
-      history = [
-        latest!,
-        BloodPressureMeasurement(
-          systolic: 126,
-          diastolic: 80,
-          heartRate: 72,
-          measuredAt: now.subtract(const Duration(hours: 5)),
-        ),
-        BloodPressureMeasurement(
-          systolic: 142,
-          diastolic: 92,
-          heartRate: 81,
-          measuredAt: now.subtract(const Duration(days: 1)),
-        ),
-      ];
-      alerts = [
-        BloodPressureAlert(
-          type: 'high',
-          message: 'Tension élevée détectée',
-          severity: 'high',
-          createdAt: now.subtract(const Duration(days: 1)),
-        ),
-      ];
-      deviceConnected = true;
-      error = 'Backend tensiomètre non disponible pour le moment.';
+      if (!silent) {
+        error = e.toString().replaceFirst('Exception: ', '');
+      }
     } finally {
       loading = false;
       notifyListeners();
@@ -103,7 +121,7 @@ class BloodPressureProvider extends ChangeNotifier {
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _bleSub?.cancel();
     super.dispose();
   }
 }
-

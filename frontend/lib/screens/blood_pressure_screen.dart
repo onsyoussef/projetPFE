@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../headsapp_theme.dart';
 import '../models/blood_pressure_alert.dart';
 import '../models/blood_pressure_measurement.dart';
 import '../providers/blood_pressure_provider.dart';
 import '../utils/patient_ui_utils.dart';
-
-const Color _bpPrimary = Color(0xFF4FA8D5);
 
 class BloodPressureScreen extends StatefulWidget {
   const BloodPressureScreen({
@@ -38,53 +37,125 @@ class _BloodPressureScreenState extends State<BloodPressureScreen> {
     super.dispose();
   }
 
+  Future<void> _toggleBleConnection() async {
+    if (_provider.bleConnecting) return;
+    try {
+      if (_provider.bleConnected) {
+        await _provider.disconnectBle();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Tensiomètre déconnecté.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else {
+        await _provider.connectBle();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Tensiomètre connecté. Les mesures seront synchronisées.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _provider,
       builder: (context, _) {
         return Scaffold(
+          backgroundColor: HeadsAppColors.surfaceAlt,
           appBar: AppBar(
             title: const Text('Tensiomètre connecté'),
-            backgroundColor: const Color(0xFF4FA8D5),
-            foregroundColor: Colors.white,
+            actions: [
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: TextButton.icon(
+                  onPressed: _provider.bleConnecting ? null : _toggleBleConnection,
+                  icon: _provider.bleConnecting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          _provider.bleConnected
+                              ? Icons.bluetooth_connected_rounded
+                              : Icons.bluetooth_rounded,
+                          size: 20,
+                        ),
+                  label: Text(
+                    _provider.bleConnecting
+                        ? 'Connexion…'
+                        : (_provider.bleConnected ? 'Connecté' : 'Se connecter'),
+                  ),
+                  style: TextButton.styleFrom(
+                    foregroundColor: _provider.bleConnected
+                        ? HeadsAppColors.success
+                        : HeadsAppColors.brandPrimary,
+                    textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+            ],
           ),
           body: _provider.loading
-              ? const Center(child: CircularProgressIndicator())
+              ? const Center(
+                  child: CircularProgressIndicator(
+                    color: HeadsAppColors.brandPrimary,
+                  ),
+                )
               : RefreshIndicator(
+                  color: HeadsAppColors.brandPrimary,
                   onRefresh: _provider.refresh,
                   child: ListView(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(HeadsAppMetrics.pagePadding),
                     children: [
                       _HubHeader(
                         patientName: widget.patientName,
-                        deviceConnected: _provider.deviceConnected,
+                        bleConnected: _provider.bleConnected,
+                        bleStatusMessage: _provider.bleStatusMessage,
                       ),
                       const SizedBox(height: 14),
-                      _InteractiveHubCard(
-                        title: 'Mesure en temps réel',
-                        subtitle: 'Consulter PAS/PAD/FC et l\'interprétation instantanée',
-                        icon: Icons.monitor_heart_rounded,
-                        accent: const Color(0xFF0EA5E9),
-                        badgeText: _provider.deviceConnected ? 'Connecté' : 'Non connecté',
-                        badgeColor: _provider.deviceConnected
-                            ? const Color(0xFF16A34A)
-                            : const Color(0xFFDC2626),
-                        enabled: _provider.deviceConnected,
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => _BloodPressureLivePage(provider: _provider),
-                            ),
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 12),
+                      if (!_provider.bleConnected)
+                        _BleHintCard(connecting: _provider.bleConnecting)
+                      else ...[
+                        _InteractiveHubCard(
+                          title: 'Mesure en temps réel',
+                          subtitle:
+                              'Consulter PAS/PAD/FC et l\'interprétation instantanée',
+                          icon: Icons.monitor_heart_rounded,
+                          accent: HeadsAppColors.brandPrimary,
+                          badgeText: 'Connecté',
+                          badgeColor: HeadsAppColors.success,
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) =>
+                                    _BloodPressureLivePage(provider: _provider),
+                              ),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                      ],
                       _InteractiveHubCard(
                         title: 'Historique',
                         subtitle: 'Voir et filtrer les mesures précédentes',
                         icon: Icons.history_rounded,
-                        accent: const Color(0xFF4F46E5),
+                        accent: HeadsAppColors.brandPrimary,
                         onTap: () {
                           Navigator.of(context).push(
                             MaterialPageRoute<void>(
@@ -98,7 +169,7 @@ class _BloodPressureScreenState extends State<BloodPressureScreen> {
                         title: 'Alertes',
                         subtitle: 'Suivre les alertes tensionnelles récentes',
                         icon: Icons.warning_amber_rounded,
-                        accent: const Color(0xFFF97316),
+                        accent: HeadsAppColors.warning,
                         onTap: () {
                           Navigator.of(context).push(
                             MaterialPageRoute<void>(
@@ -112,7 +183,7 @@ class _BloodPressureScreenState extends State<BloodPressureScreen> {
                         Text(
                           _provider.error!,
                           style: const TextStyle(
-                            color: Color(0xFFB45309),
+                            color: HeadsAppColors.warning,
                             fontSize: 12,
                           ),
                         ),
@@ -127,55 +198,123 @@ class _BloodPressureScreenState extends State<BloodPressureScreen> {
 }
 
 class _HubHeader extends StatelessWidget {
-  const _HubHeader({required this.patientName, required this.deviceConnected});
+  const _HubHeader({
+    required this.patientName,
+    required this.bleConnected,
+    this.bleStatusMessage,
+  });
 
   final String patientName;
-  final bool deviceConnected;
+  final bool bleConnected;
+  final String? bleStatusMessage;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        gradient: const LinearGradient(
-          colors: [Color(0xFFE0F2FE), Color(0xFFF8FAFC)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        border: Border.all(color: const Color(0xFFBAE6FD)),
+        color: HeadsAppColors.surface,
+        borderRadius: BorderRadius.circular(HeadsAppMetrics.cardRadius),
+        border: Border.all(color: HeadsAppColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: HeadsAppColors.brandPrimary.withValues(alpha: 0.06),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Suivi tensionnel',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: HeadsAppColors.textPrimary,
+                ),
           ),
           const SizedBox(height: 6),
           Text(
             readablePatientName(patientName).isEmpty
                 ? 'Patient'
                 : readablePatientName(patientName),
-            style: const TextStyle(color: Color(0xFF334155), fontWeight: FontWeight.w600),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Row(
             children: [
               Icon(
-                deviceConnected ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
+                bleConnected
+                    ? Icons.bluetooth_connected_rounded
+                    : Icons.bluetooth_disabled_rounded,
                 size: 18,
-                color: deviceConnected ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+                color: bleConnected
+                    ? HeadsAppColors.success
+                    : HeadsAppColors.textTertiary,
               ),
-              const SizedBox(width: 6),
-              Text(
-                deviceConnected ? 'Tensiomètre connecté' : 'Tensiomètre non connecté',
-                style: TextStyle(
-                  color: deviceConnected ? const Color(0xFF15803D) : const Color(0xFFB91C1C),
-                  fontWeight: FontWeight.w700,
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  bleStatusMessage ??
+                      (bleConnected
+                          ? 'Tensiomètre connecté via Bluetooth'
+                          : 'Appuyez sur « Se connecter » pour lier le tensiomètre'),
+                  style: TextStyle(
+                    color: bleConnected
+                        ? HeadsAppColors.success
+                        : HeadsAppColors.textSecondary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BleHintCard extends StatelessWidget {
+  const _BleHintCard({required this.connecting});
+
+  final bool connecting;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: HeadsAppColors.brandHighlight,
+        borderRadius: BorderRadius.circular(HeadsAppMetrics.compactRadius),
+        border: Border.all(
+          color: HeadsAppColors.brandPrimary.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            connecting ? Icons.hourglass_top_rounded : Icons.info_outline_rounded,
+            color: HeadsAppColors.brandPrimary,
+            size: 22,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              connecting
+                  ? 'Connexion Bluetooth en cours avec le tensiomètre ESP32…'
+                  : 'La carte « Mesure en temps réel » apparaîtra après connexion Bluetooth via le bouton « Se connecter » en haut à droite.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: HeadsAppColors.textSecondary,
+                    height: 1.45,
+                  ),
+            ),
           ),
         ],
       ),
@@ -190,7 +329,6 @@ class _InteractiveHubCard extends StatefulWidget {
     required this.icon,
     required this.accent,
     required this.onTap,
-    this.enabled = true,
     this.badgeText,
     this.badgeColor,
   });
@@ -200,7 +338,6 @@ class _InteractiveHubCard extends StatefulWidget {
   final IconData icon;
   final Color accent;
   final VoidCallback onTap;
-  final bool enabled;
   final String? badgeText;
   final Color? badgeColor;
 
@@ -214,7 +351,6 @@ class _InteractiveHubCardState extends State<_InteractiveHubCard> {
 
   @override
   Widget build(BuildContext context) {
-    final active = widget.enabled;
     final scale = _pressed ? 0.98 : (_hovered ? 1.02 : 1.0);
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -223,27 +359,19 @@ class _InteractiveHubCardState extends State<_InteractiveHubCard> {
         onTapDown: (_) => setState(() => _pressed = true),
         onTapCancel: () => setState(() => _pressed = false),
         onTapUp: (_) => setState(() => _pressed = false),
-        onTap: active ? widget.onTap : null,
+        onTap: widget.onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOutCubic,
           transform: Matrix4.diagonal3Values(scale, scale, 1),
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            gradient: LinearGradient(
-              colors: active
-                  ? [widget.accent.withValues(alpha: 0.12), Colors.white]
-                  : [const Color(0xFFF1F5F9), const Color(0xFFF8FAFC)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            border: Border.all(
-              color: active ? widget.accent.withValues(alpha: 0.45) : const Color(0xFFE2E8F0),
-            ),
+            color: HeadsAppColors.surface,
+            borderRadius: BorderRadius.circular(HeadsAppMetrics.cardRadius),
+            border: Border.all(color: HeadsAppColors.border),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: _hovered ? 0.12 : 0.08),
+                color: HeadsAppColors.brandPrimary.withValues(alpha: _hovered ? 0.12 : 0.06),
                 blurRadius: _hovered ? 16 : 10,
                 offset: const Offset(0, 6),
               ),
@@ -255,10 +383,10 @@ class _InteractiveHubCardState extends State<_InteractiveHubCard> {
                 width: 46,
                 height: 46,
                 decoration: BoxDecoration(
-                  color: active ? widget.accent.withValues(alpha: 0.18) : const Color(0xFFE2E8F0),
-                  borderRadius: BorderRadius.circular(12),
+                  color: widget.accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(HeadsAppMetrics.compactRadius),
                 ),
-                child: Icon(widget.icon, color: active ? widget.accent : const Color(0xFF94A3B8)),
+                child: Icon(widget.icon, color: widget.accent),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -267,16 +395,17 @@ class _InteractiveHubCardState extends State<_InteractiveHubCard> {
                   children: [
                     Text(
                       widget.title,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: active ? const Color(0xFF0F172A) : const Color(0xFF64748B),
-                      ),
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: HeadsAppColors.textPrimary,
+                          ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       widget.subtitle,
-                      style: const TextStyle(fontSize: 13, color: Color(0xFF475569)),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: HeadsAppColors.textSecondary,
+                          ),
                     ),
                   ],
                 ),
@@ -319,6 +448,7 @@ class _BloodPressureLivePage extends StatelessWidget {
       builder: (context, _) {
         final latest = provider.latest;
         return Scaffold(
+          backgroundColor: HeadsAppColors.surfaceAlt,
           appBar: AppBar(title: const Text('Mesure en temps réel')),
           body: RefreshIndicator(
             onRefresh: provider.refresh,
@@ -370,6 +500,7 @@ class _BloodPressureHistoryPageState extends State<_BloodPressureHistoryPage> {
         }).toList();
 
         return Scaffold(
+          backgroundColor: HeadsAppColors.surfaceAlt,
           appBar: AppBar(title: const Text('Historique des mesures')),
           body: ListView(
             padding: const EdgeInsets.all(16),
@@ -455,6 +586,7 @@ class _BloodPressureAlertsPageState extends State<_BloodPressureAlertsPage> {
           return dateOk && sevOk;
         }).toList();
         return Scaffold(
+          backgroundColor: HeadsAppColors.surfaceAlt,
           appBar: AppBar(title: const Text('Alertes')),
           body: ListView(
             padding: const EdgeInsets.all(16),
@@ -519,16 +651,19 @@ class _HistoryFilters extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const borderColor = Color(0xFFD2E4F0);
+    const borderColor = HeadsAppColors.border;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFFFCFEFF), Color(0xFFF2F8FC)],
+          colors: [
+            HeadsAppColors.surface,
+            HeadsAppColors.surfaceSoft,
+          ],
         ),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(HeadsAppMetrics.compactRadius),
         border: Border.all(color: borderColor),
         boxShadow: [
           BoxShadow(
@@ -546,18 +681,18 @@ class _HistoryFilters extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
-              color: _bpPrimary.withValues(alpha: 0.10),
+              color: HeadsAppColors.brandPrimary.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(999),
             ),
             child: const Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.tune_rounded, size: 14, color: _bpPrimary),
+                Icon(Icons.tune_rounded, size: 14, color: HeadsAppColors.brandPrimary),
                 SizedBox(width: 6),
                 Text(
                   'Filtres',
                   style: TextStyle(
-                    color: _bpPrimary,
+                    color: HeadsAppColors.brandPrimary,
                     fontWeight: FontWeight.w700,
                     fontSize: 12,
                   ),
@@ -572,8 +707,8 @@ class _HistoryFilters extends StatelessWidget {
               selectedDate == null ? 'Filtrer par date' : dateFmt.format(selectedDate!),
             ),
             style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0xFF0B6990),
-              side: const BorderSide(color: Color(0xFFA7C9DC)),
+              foregroundColor: HeadsAppColors.brandPrimary,
+              side: const BorderSide(color: HeadsAppColors.border),
               backgroundColor: Colors.white,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(999),
@@ -590,8 +725,8 @@ class _HistoryFilters extends StatelessWidget {
                   : '${selectedTime!.hour.toString().padLeft(2, '0')}:${selectedTime!.minute.toString().padLeft(2, '0')}',
             ),
             style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0xFF0B6990),
-              side: const BorderSide(color: Color(0xFFA7C9DC)),
+              foregroundColor: HeadsAppColors.brandPrimary,
+              side: const BorderSide(color: HeadsAppColors.border),
               backgroundColor: Colors.white,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(999),
@@ -604,7 +739,7 @@ class _HistoryFilters extends StatelessWidget {
             icon: const Icon(Icons.refresh_rounded),
             label: const Text('Réinitialiser'),
             style: TextButton.styleFrom(
-              foregroundColor: const Color(0xFF0B6990),
+              foregroundColor: HeadsAppColors.brandPrimary,
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
             ),
           ),
@@ -636,12 +771,15 @@ class _AlertFilters extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFFFCFEFF), Color(0xFFF2F8FC)],
+          colors: [
+            HeadsAppColors.surface,
+            HeadsAppColors.surfaceSoft,
+          ],
         ),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(HeadsAppMetrics.compactRadius),
         border: Border.all(color: const Color(0xFFD2E4F0)),
       ),
       child: Wrap(
@@ -652,18 +790,18 @@ class _AlertFilters extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
-              color: _bpPrimary.withValues(alpha: 0.10),
+              color: HeadsAppColors.brandPrimary.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(999),
             ),
             child: const Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.filter_alt_rounded, size: 14, color: _bpPrimary),
+                Icon(Icons.filter_alt_rounded, size: 14, color: HeadsAppColors.brandPrimary),
                 SizedBox(width: 6),
                 Text(
                   'Filtres',
                   style: TextStyle(
-                    color: _bpPrimary,
+                    color: HeadsAppColors.brandPrimary,
                     fontWeight: FontWeight.w700,
                     fontSize: 12,
                   ),
@@ -678,8 +816,8 @@ class _AlertFilters extends StatelessWidget {
               selectedDate == null ? 'Filtrer par date' : dateFmt.format(selectedDate!),
             ),
             style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0xFF0B6990),
-              side: const BorderSide(color: Color(0xFFA7C9DC)),
+              foregroundColor: HeadsAppColors.brandPrimary,
+              side: const BorderSide(color: HeadsAppColors.border),
               backgroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
             ),
@@ -690,7 +828,7 @@ class _AlertFilters extends StatelessWidget {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: const Color(0xFFA7C9DC)),
+                border: Border.all(color: HeadsAppColors.border),
               ),
               child: DropdownButton<String>(
                 value: severity,
@@ -708,7 +846,7 @@ class _AlertFilters extends StatelessWidget {
             icon: const Icon(Icons.refresh_rounded),
             label: const Text('Réinitialiser'),
             style: TextButton.styleFrom(
-              foregroundColor: const Color(0xFF0B6990),
+              foregroundColor: HeadsAppColors.brandPrimary,
             ),
           ),
         ],
@@ -869,7 +1007,7 @@ class _HistoryItem extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ListTile(
-        leading: const Icon(Icons.monitor_heart_rounded, color: Color(0xFF4FA8D5)),
+        leading: const Icon(Icons.monitor_heart_rounded, color: HeadsAppColors.brandPrimary),
         title: Text('PAS ${measurement.systolic} / PAD ${measurement.diastolic}'),
         subtitle: Text(
           '${dateFmt.format(measurement.measuredAt)} • ${timeFmt.format(measurement.measuredAt)}'

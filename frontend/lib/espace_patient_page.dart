@@ -151,7 +151,16 @@ class _EspacePatientPageState extends State<EspacePatientPage> with WidgetsBindi
   }
 
   Future<void> _openPatientDiscussionsFromIcon() async {
-    await _openPatientDiscussions();
+    if (!mounted) return;
+    await DiscussionsPatientPage.openAsSheet(
+      context,
+      patientId: widget.patientId,
+      patientName: _patientName,
+      patientPhotoPath: _patientPhotoPath,
+      onConversationOpened: _decrementInboxMessageBadge,
+    );
+    if (!mounted) return;
+    _syncInboxBadgeFromApi();
   }
 
   Future<void> _openPatientDiscussions() async {
@@ -573,7 +582,7 @@ class _EspacePatientPageState extends State<EspacePatientPage> with WidgetsBindi
 
   static const Color _primary = HeadsAppColors.brandAccent;
   static const Color _primaryDark = HeadsAppColors.brandPrimary;
-  static const Color _surface = Color(0xFFF8FAFC);
+  static const Color _surface = Color(0xFFF1F5F9);
   static const Color _navy = Color(0xFF1A2B48);
   static const Color _onSurface = _navy;
   static const Color _onSurfaceVariant = Color(0xFF718096);
@@ -658,11 +667,8 @@ class _EspacePatientPageState extends State<EspacePatientPage> with WidgetsBindi
     }
   }
 
-  String? _patientPhotoUrl() {
-    if (_patientPhotoPath == null || _patientPhotoPath!.trim().isEmpty) return null;
-    if (_patientPhotoPath!.startsWith('http')) return _patientPhotoPath;
-    return '${ApiService.baseUrl}${_patientPhotoPath!}';
-  }
+  String? _patientPhotoUrl() =>
+      ApiService.resolveMediaUrlOrNull(_patientPhotoPath);
 
   Future<void> _confirmerEtDeconnecter() async {
     final confirmed = await showPatientLogoutDialog(context);

@@ -3,8 +3,9 @@ import 'package:flutter/services.dart';
 
 import '../headsapp_theme.dart';
 
-const _authInputRadius = 12.0;
+const _authInputRadius = 14.0;
 const _authMaxWidth = 420.0;
+const _logoAsset = 'assets/images/headsapp_logo.png';
 
 /// Fond blanc centré pour les écrans d'authentification.
 class AuthScaffold extends StatelessWidget {
@@ -13,16 +14,18 @@ class AuthScaffold extends StatelessWidget {
     required this.child,
     this.showBackButton = false,
     this.onBack,
+    this.backgroundColor = Colors.white,
   });
 
   final Widget child;
   final bool showBackButton;
   final VoidCallback? onBack;
+  final Color backgroundColor;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: backgroundColor,
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -64,53 +67,95 @@ class AuthBrandHeader extends StatelessWidget {
     this.icon = Icons.face_rounded,
     this.iconBackgroundColor,
     this.centered = true,
+    this.useLogoAsset = false,
+    this.vertical = false,
   });
 
   final IconData icon;
   final Color? iconBackgroundColor;
   final bool centered;
+  final bool useLogoAsset;
+  final bool vertical;
+
+  Widget _logoBox() {
+    if (useLogoAsset) {
+      return Container(
+        height: 72,
+        width: 72,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+          boxShadow: [
+            BoxShadow(
+              color: HeadsAppColors.brandPrimary.withValues(alpha: 0.08),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Image.asset(_logoAsset, fit: BoxFit.contain),
+      );
+    }
+
+    return Container(
+      height: 44,
+      width: 44,
+      decoration: BoxDecoration(
+        color: iconBackgroundColor ?? Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: iconBackgroundColor == null
+            ? Border.all(
+                color: HeadsAppColors.brandPrimary.withValues(alpha: 0.2),
+              )
+            : null,
+        boxShadow: [
+          BoxShadow(
+            color: HeadsAppColors.brandPrimary.withValues(alpha: 0.12),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Icon(
+        icon,
+        color: iconBackgroundColor != null ? Colors.white : HeadsAppColors.brandPrimary,
+        size: 26,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final title = Text(
+      'HeadsApp',
+      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            color: const Color(0xFF2459A8),
+            fontWeight: FontWeight.w800,
+            fontSize: vertical ? 22 : null,
+            letterSpacing: -0.3,
+          ),
+    );
+
+    if (vertical) {
+      final column = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _logoBox(),
+          const SizedBox(height: 12),
+          title,
+        ],
+      );
+      return centered ? Center(child: column) : column;
+    }
+
     final row = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
-          height: 44,
-          width: 44,
-          decoration: BoxDecoration(
-            color: iconBackgroundColor ?? Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: iconBackgroundColor == null
-                ? Border.all(
-                    color: HeadsAppColors.brandPrimary.withValues(alpha: 0.2),
-                  )
-                : null,
-            boxShadow: [
-              BoxShadow(
-                color: HeadsAppColors.brandPrimary.withValues(alpha: 0.12),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Icon(
-            icon,
-            color: iconBackgroundColor != null
-                ? Colors.white
-                : HeadsAppColors.brandPrimary,
-            size: 26,
-          ),
-        ),
+        _logoBox(),
         const SizedBox(width: 10),
-        Text(
-          'HeadsApp',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: HeadsAppColors.brandPrimary,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.3,
-              ),
-        ),
+        title,
       ],
     );
 
@@ -188,10 +233,10 @@ class AuthLabeledField extends StatelessWidget {
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: labelUppercase
                     ? HeadsAppColors.textTertiary
-                    : HeadsAppColors.textSecondary,
-                fontWeight: FontWeight.w600,
+                    : const Color(0xFF374151),
+                fontWeight: FontWeight.w700,
                 letterSpacing: labelUppercase ? 0.6 : 0,
-                fontSize: labelUppercase ? 11 : 13,
+                fontSize: labelUppercase ? 11 : 14,
               ),
         ),
         const SizedBox(height: 8),
@@ -205,6 +250,7 @@ InputDecoration authInputDecoration({
   required String hintText,
   required IconData prefixIcon,
   Widget? suffixIcon,
+  Color? fillColor,
 }) {
   return InputDecoration(
     hintText: hintText,
@@ -215,7 +261,7 @@ InputDecoration authInputDecoration({
     ),
     suffixIcon: suffixIcon,
     filled: true,
-    fillColor: HeadsAppColors.authInputFill,
+    fillColor: fillColor ?? HeadsAppColors.authInputFill,
     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
     border: OutlineInputBorder(
       borderRadius: BorderRadius.circular(_authInputRadius),
@@ -234,6 +280,122 @@ InputDecoration authInputDecoration({
     ),
     hintStyle: const TextStyle(color: HeadsAppColors.textTertiary),
   );
+}
+
+/// Encadré des règles de mot de passe (inscription).
+class AuthPasswordRulesBox extends StatelessWidget {
+  const AuthPasswordRulesBox({super.key});
+
+  static const _rules = [
+    'Minimum 8 caractères',
+    'Au moins 1 majuscule (A-Z)',
+    'Au moins 1 minuscule (a-z)',
+    'Au moins 1 chiffre (0-9)',
+    'Au moins 1 caractère spécial (!@#...)',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F6F8),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Règles du mot de passe :',
+            style: TextStyle(
+              color: Color(0xFF374151),
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 8),
+          for (final rule in _rules)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                '- $rule',
+                style: const TextStyle(
+                  color: Color(0xFF64748B),
+                  fontSize: 12.5,
+                  height: 1.35,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Bouton principal bleu plein, forme pilule (écran de connexion).
+class AuthSolidButton extends StatelessWidget {
+  const AuthSolidButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+    this.loading = false,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onPressed != null && !loading;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        color: enabled ? const Color(0xFF2459A8) : HeadsAppColors.textTertiary.withValues(alpha: 0.35),
+        boxShadow: enabled
+            ? [
+                BoxShadow(
+                  color: const Color(0xFF2459A8).withValues(alpha: 0.28),
+                  blurRadius: 16,
+                  offset: const Offset(0, 8),
+                ),
+              ]
+            : null,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: enabled ? onPressed : null,
+          borderRadius: BorderRadius.circular(999),
+          child: SizedBox(
+            width: double.infinity,
+            height: HeadsAppMetrics.buttonHeight,
+            child: Center(
+              child: loading
+                  ? const SizedBox(
+                      height: 22,
+                      width: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Text(
+                      label,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// Bouton principal en dégradé lavande → bleu, forme pilule.

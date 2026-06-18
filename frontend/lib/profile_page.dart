@@ -22,10 +22,10 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  static const Color _pageBg = Color(0xFFF8FAFC);
+  static const Color _pageBg = Color(0xFFF1F5F9);
   static const Color _titleNavy = Color(0xFF1A458B);
   static const Color _subtitleGrey = Color(0xFF6B7280);
-  static const Color _iconBlue = Color(0xFF265AA6);
+  static const Color _iconBlue = Color(0xFF1A458B);
   static const List<String> _bloodGroups = [
     '',
     'A+',
@@ -140,11 +140,7 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
-  String? _photoUrl() {
-    final url = ApiService.resolveMediaUrl(_photoPath);
-    if (url.isEmpty) return null;
-    return url;
-  }
+  String? _photoUrl() => ApiService.resolveMediaUrlOrNull(_photoPath);
 
   int? _computeAge() {
     if (_birthDate == null) return null;
@@ -334,105 +330,120 @@ class _ProfilePageState extends State<ProfilePage> {
 
     return Scaffold(
       backgroundColor: _pageBg,
-      appBar: AppBar(
-        backgroundColor: _pageBg,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        leading: IconButton(
-          onPressed: _popWithResult,
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          color: _titleNavy,
-        ),
-        title: Text(
-          'Mon profil',
-          style: theme.textTheme.titleLarge?.copyWith(
-            color: _titleNavy,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.2,
-          ),
-        ),
-        centerTitle: true,
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const SizedBox(height: 8),
-                    Center(
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          CircleAvatar(
-                            radius: 54,
-                            backgroundColor: const Color(0xFFE8F0FE),
-                            backgroundImage:
-                                photoUrl != null ? NetworkImage(photoUrl) : null,
-                            child: photoUrl == null
-                                ? const Icon(
-                                    Icons.person_rounded,
-                                    color: _iconBlue,
-                                    size: 54,
-                                  )
-                                : null,
-                          ),
-                          Positioned(
-                            right: 4,
-                            bottom: 4,
-                            child: Material(
-                              color: _titleNavy,
-                              shape: const CircleBorder(),
-                              child: InkWell(
-                                customBorder: const CircleBorder(),
-                                onTap:
-                                    _uploadingPhoto ? null : _pickAndUploadPhoto,
-                                child: Padding(
-                                  padding: const EdgeInsets.all(8),
-                                  child: _uploadingPhoto
-                                      ? const SizedBox(
-                                          width: 16,
-                                          height: 16,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: Colors.white,
-                                          ),
-                                        )
-                                      : const Icon(
-                                          Icons.edit_rounded,
-                                          color: Colors.white,
-                                          size: 16,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              color: Colors.white,
+              padding: const EdgeInsets.fromLTRB(4, 4, 12, 12),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: IconButton(
+                      onPressed: _popWithResult,
+                      icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+                      color: _titleNavy,
+                      tooltip: 'Retour',
+                    ),
+                  ),
+                  Text(
+                    'Mon profil',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      color: _titleNavy,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 20,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Center(
+                              child: Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  CircleAvatar(
+                                    radius: 54,
+                                    backgroundColor: const Color(0xFFE8F0FE),
+                                    backgroundImage: photoUrl != null
+                                        ? NetworkImage(photoUrl)
+                                        : null,
+                                    child: photoUrl == null
+                                        ? const Icon(
+                                            Icons.person_rounded,
+                                            color: _iconBlue,
+                                            size: 54,
+                                          )
+                                        : null,
+                                  ),
+                                  Positioned(
+                                    right: 4,
+                                    bottom: 4,
+                                    child: Material(
+                                      color: _titleNavy,
+                                      shape: const CircleBorder(),
+                                      child: InkWell(
+                                        customBorder: const CircleBorder(),
+                                        onTap: _uploadingPhoto
+                                            ? null
+                                            : _pickAndUploadPhoto,
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(8),
+                                          child: _uploadingPhoto
+                                              ? const SizedBox(
+                                                  width: 16,
+                                                  height: 16,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                    strokeWidth: 2,
+                                                    color: Colors.white,
+                                                  ),
+                                                )
+                                              : const Icon(
+                                                  Icons.edit_rounded,
+                                                  color: Colors.white,
+                                                  size: 16,
+                                                ),
                                         ),
-                                ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      _nameController.text.trim().isEmpty
-                          ? readablePatientName(widget.patientName)
-                          : _nameController.text.trim(),
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        color: _titleNavy,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      _formatPatientSince(),
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: _subtitleGrey,
-                      ),
-                    ),
-                    const SizedBox(height: 28),
+                            const SizedBox(height: 16),
+                            Text(
+                              _nameController.text.trim().isEmpty
+                                  ? readablePatientName(widget.patientName)
+                                  : _nameController.text.trim(),
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                color: _titleNavy,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              _formatPatientSince(),
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: _subtitleGrey,
+                              ),
+                            ),
+                            const SizedBox(height: 24),
                     _ProfileSectionCard(
                       title: 'Informations personnelles',
                       icon: Icons.person_outline_rounded,
@@ -542,7 +553,7 @@ class _ProfilePageState extends State<ProfilePage> {
                               ),
                               icon: const Icon(
                                 Icons.keyboard_arrow_down_rounded,
-                                color: _subtitleGrey,
+                                color: _iconBlue,
                               ),
                               items: const [
                                 DropdownMenuItem(
@@ -578,7 +589,7 @@ class _ProfilePageState extends State<ProfilePage> {
                                     isExpanded: true,
                                     icon: const Icon(
                                       Icons.keyboard_arrow_down_rounded,
-                                      color: _subtitleGrey,
+                                      color: _iconBlue,
                                       size: 20,
                                     ),
                                     items: _bloodGroups
@@ -698,10 +709,14 @@ class _ProfilePageState extends State<ProfilePage> {
                       loading: _savingProfile,
                       onPressed: _savingProfile ? null : _saveProfile,
                     ),
-                  ],
-                ),
-              ),
+                          ],
+                        ),
+                      ),
+                    ),
             ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -728,16 +743,15 @@ class _ProfileSectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 20),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 22),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFE8EDF3)),
+        borderRadius: BorderRadius.circular(25),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF1A2B48).withValues(alpha: 0.04),
-            blurRadius: 14,
-            offset: const Offset(0, 4),
+            color: const Color(0xFF1A2B48).withValues(alpha: 0.06),
+            blurRadius: 18,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
@@ -746,25 +760,18 @@ class _ProfileSectionCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8F2FC),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  icon,
-                  color: const Color(0xFF265AA6),
-                  size: 20,
-                ),
+              Icon(
+                icon,
+                color: const Color(0xFF1A458B),
+                size: 22,
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               Text(
                 title,
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       color: const Color(0xFF1A458B),
                       fontWeight: FontWeight.w800,
+                      fontSize: 16,
                     ),
               ),
             ],
@@ -785,6 +792,9 @@ class _ProfileLabeledField extends StatelessWidget {
     this.compact = false,
   });
 
+  static const Color labelColor = Color(0xFF1A458B);
+  static const Color fieldBg = Color(0xFFF0F4F8);
+
   final String label;
   final IconData icon;
   final Widget child;
@@ -796,31 +806,36 @@ class _ProfileLabeledField extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 6),
+          padding: const EdgeInsets.only(left: 2, bottom: 8),
           child: Text(
             label,
             style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: const Color(0xFF6B7280),
-                  fontWeight: FontWeight.w500,
+                  color: _ProfileLabeledField.labelColor,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
                 ),
           ),
         ),
         Container(
           width: double.infinity,
           padding: EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: compact ? 10 : 12,
+            horizontal: 14,
+            vertical: compact ? 12 : 14,
           ),
           decoration: BoxDecoration(
-            color: const Color(0xFFF3F4F6),
-            borderRadius: BorderRadius.circular(14),
+            color: _ProfileLabeledField.fieldBg,
+            borderRadius: BorderRadius.circular(16),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Icon(icon, color: const Color(0xFF265AA6), size: 20),
+                padding: const EdgeInsets.only(top: 1),
+                child: Icon(
+                  icon,
+                  color: const Color(0xFF1A458B),
+                  size: compact ? 18 : 20,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(child: child),
@@ -850,8 +865,8 @@ class _SaveGradientButton extends StatelessWidget {
             ? null
             : const LinearGradient(
                 colors: [
-                  Color(0xFFD4A5B5),
-                  Color(0xFF4A89DC),
+                  Color(0xFFE8719A),
+                  Color(0xFF3B5998),
                 ],
               ),
         color: onPressed == null ? const Color(0xFFE5E7EB) : null,

@@ -61,8 +61,8 @@ Widget doctorAvatarForPatient({
   Color accentColor = HeadsAppColors.brandPrimary,
   Widget? fallbackChild,
 }) {
-  final url = ApiService.resolveMediaUrl(doctorPhotoPath);
-  final hasUrl = url.isNotEmpty;
+  final url = ApiService.resolveMediaUrlOrNull(doctorPhotoPath);
+  final hasUrl = url != null;
   return CircleAvatar(
     radius: radius,
     backgroundColor: backgroundColor,

@@ -72,5 +72,7 @@
 	<string>L'application a besoin d'accéder à l'appareil photo pour ajouter des photos à votre dossier médical.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>L'application accède à vos photos pour importer des images dans votre dossier médical.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>HeadsApp utilise le Bluetooth pour se connecter à votre tensiomètre.</string>
 </dict>
 </plist>

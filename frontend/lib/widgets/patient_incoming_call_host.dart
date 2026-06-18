@@ -90,6 +90,7 @@ class _PatientIncomingCallHostState extends State<PatientIncomingCallHost>
           fromUserId: fromUserId,
           displayName: callerInfo['name']?.toString() ?? 'Médecin',
           avatarUrl: callerInfo['avatarUrl']?.toString(),
+          specialty: callerInfo['specialty']?.toString(),
           roomId: roomId,
           offer: Map<String, dynamic>.from(sdp),
           isVideoCall: mediaType == 'video',

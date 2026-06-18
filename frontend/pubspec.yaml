@@ -39,6 +39,7 @@ dependencies:
   http: ^1.6.0
   geolocator: ^13.0.2
   permission_handler: ^11.3.1
+  flutter_blue_plus: ^1.35.5
   file_picker: ^8.0.0
   record: ^5.0.0
   path_provider: ^2.1.0
@@ -90,6 +91,10 @@ flutter:
 
   assets:
     - assets/images/headsapp_logo.png
+    - assets/images/chat_medical_pattern.png
+    - assets/images/onboarding_presentation.png
+    - assets/images/onboarding_communication.png
+    - assets/images/onboarding_teleconsultation.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

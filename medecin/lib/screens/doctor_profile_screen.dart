@@ -67,8 +67,8 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
       _yearsExperienceController.text =
           (p['yearsExperience'] == null ? '' : p['yearsExperience'].toString());
       _hospitalOrClinicController.text = (p['hospitalOrClinic'] ?? '').toString();
-      _specialty = readableDecryptedField(p['specialty']?.toString());
-      _specialty = _specialty.isEmpty ? null : _specialty;
+      final specialty = readableDecryptedField(p['specialty']?.toString());
+      _specialty = specialty.isEmpty ? null : specialty;
       final gov = readableDecryptedField(p['governorate']?.toString());
       _governorate = gov.isEmpty ? null : gov;
       final c = readableDecryptedField(p['country']?.toString());

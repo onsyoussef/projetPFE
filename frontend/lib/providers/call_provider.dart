@@ -47,6 +47,7 @@ class CallProvider extends ChangeNotifier {
   String? remoteUserId;
   String? roomId;
   bool isMuted = false;
+  bool videoEnabled = true;
   Duration callDuration = Duration.zero;
   bool isCaller = false;
   bool isVideoCall = false;
@@ -141,6 +142,7 @@ class CallProvider extends ChangeNotifier {
     isCaller = false;
     isVideoCall = false;
     isMuted = false;
+    videoEnabled = true;
     speakerOn = false;
     connectionState = RTCPeerConnectionState.RTCPeerConnectionStateNew;
     _setState(CallState.idle);
@@ -159,6 +161,11 @@ class CallProvider extends ChangeNotifier {
 
   void toggleMute() {
     isMuted = _webrtc.toggleMute();
+    notifyListeners();
+  }
+
+  void toggleVideo() {
+    videoEnabled = _webrtc.toggleVideo();
     notifyListeners();
   }
 

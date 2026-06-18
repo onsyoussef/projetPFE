@@ -172,13 +172,27 @@ registerSocketHandlers(io);
 initPushNotifications();
 
 mongoose
-  .connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/telemedecine')
+  .connect(
+    process.env.MONGODB_URI_STANDARD?.trim() ||
+      process.env.MONGODB_URI?.trim() ||
+      'mongodb://127.0.0.1:27017/telemedecine',
+    {
+      serverSelectionTimeoutMS: 30000,
+      socketTimeoutMS: 45000,
+      family: 4,
+    },
+  )
   .then(async () => {
     console.log('MongoDB connecté ');
     await hydrateWaitingRoomsFromDb();
   })
-  .catch((err) => {
-    console.error('Erreur MongoDB ', err);
+  .catch(async (err) => {
+    console.error('Erreur MongoDB ', err?.message || err);
+    if (String(err?.message || '').includes('querySrv')) {
+      console.error(
+        '[MongoDB] Échec DNS SRV (Atlas). Vérifiez Internet/VPN, ou ajoutez MONGODB_URI_STANDARD dans backend/.env (chaîne sans +srv, depuis Atlas → Connect).',
+      );
+    }
     process.exit(1);
   });
 

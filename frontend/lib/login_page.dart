@@ -23,7 +23,6 @@ class _LoginPageState extends State<LoginPage> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _obscurePassword = true;
-  bool _rememberMe = false;
 
   @override
   void dispose() {
@@ -100,21 +99,21 @@ class _LoginPageState extends State<LoginPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 12),
-          const AuthBrandHeader(),
-          const SizedBox(height: 28),
+          const SizedBox(height: 16),
+          const AuthBrandHeader(useLogoAsset: true, vertical: true),
+          const SizedBox(height: 32),
           const AuthTitleBlock(
-            title: 'Bon retour',
-            subtitle: 'Saisissez vos identifiants pour continuer.',
+            title: 'Bon retour parmi nous',
+            subtitle: 'Veuillez entrer vos identifiants pour continuer.',
           ),
-          const SizedBox(height: 28),
+          const SizedBox(height: 32),
           Form(
             key: _formKey,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 AuthLabeledField(
-                  label: 'Email',
+                  label: 'Adresse e-mail',
                   child: TextFormField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
@@ -124,110 +123,91 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                     validator: (value) {
                       if (value == null || value.isEmpty) {
-                        return 'Veuillez entrer votre email';
+                        return 'Veuillez entrer votre adresse e-mail';
                       }
                       if (!value.contains('@')) {
-                        return 'Email invalide';
+                        return 'Adresse e-mail invalide';
                       }
                       return null;
                     },
                   ),
                 ),
-                const SizedBox(height: 18),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const ResetPasswordPage(),
-                        ),
-                      );
-                    },
-                    style: TextButton.styleFrom(
-                      padding: EdgeInsets.zero,
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    child: const Text(
-                      'Mot de passe oublié ?',
-                      style: TextStyle(
-                        color: HeadsAppColors.brandPrimary,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                AuthLabeledField(
-                  label: 'Mot de passe',
-                  child: TextFormField(
-                    controller: _passwordController,
-                    obscureText: _obscurePassword,
-                    decoration: authInputDecoration(
-                      hintText: '••••••••',
-                      prefixIcon: Icons.lock_outline_rounded,
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          _obscurePassword
-                              ? Icons.visibility_off_outlined
-                              : Icons.visibility_outlined,
-                          color: HeadsAppColors.textTertiary,
-                          size: 20,
-                        ),
-                        onPressed: () {
-                          setState(() => _obscurePassword = !_obscurePassword);
-                        },
-                      ),
-                    ),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Veuillez entrer votre mot de passe';
-                      }
-                      return null;
-                    },
-                  ),
-                ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 20),
                 Row(
                   children: [
-                    SizedBox(
-                      height: 24,
-                      width: 24,
-                      child: Checkbox(
-                        value: _rememberMe,
-                        onChanged: (v) => setState(() => _rememberMe = v ?? false),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4),
+                    const Expanded(
+                      child: Text(
+                        'Mot de passe',
+                        style: TextStyle(
+                          color: Color(0xFF374151),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
                         ),
-                        side: const BorderSide(color: HeadsAppColors.border),
-                        activeColor: HeadsAppColors.brandPrimary,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Se souvenir de moi',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: HeadsAppColors.textSecondary,
+                    TextButton(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const ResetPasswordPage(),
                           ),
+                        );
+                      },
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text(
+                        'Mot de passe oublié ?',
+                        style: TextStyle(
+                          color: HeadsAppColors.brandPrimary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 24),
-                AuthGradientButton(
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _passwordController,
+                  obscureText: _obscurePassword,
+                  decoration: authInputDecoration(
+                    hintText: '••••••••',
+                    prefixIcon: Icons.lock_outline_rounded,
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscurePassword
+                            ? Icons.visibility_off_outlined
+                            : Icons.visibility_outlined,
+                        color: HeadsAppColors.textTertiary,
+                        size: 20,
+                      ),
+                      onPressed: () {
+                        setState(() => _obscurePassword = !_obscurePassword);
+                      },
+                    ),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Veuillez entrer votre mot de passe';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 28),
+                AuthSolidButton(
                   label: 'Se connecter',
                   onPressed: _onLogin,
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 24),
-          const AuthDivider(),
-          const SizedBox(height: 8),
+          const SizedBox(height: 28),
           AuthFooterLink(
-            prompt: 'Nouveau sur HeadsApp ?',
-            actionLabel: 'Créer un compte',
+            prompt: 'Vous n\'avez pas de compte ?',
+            actionLabel: 'S\'inscrire',
             onPressed: () {
               Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const SignupPage()),

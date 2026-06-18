@@ -1,22 +1,23 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../services/call_chat_context.dart';
+import '../services/permission_service.dart';
 import '../services/webrtc_service.dart';
+import '../utils/patient_ui_utils.dart';
 import '../utils/waiting_room_unload.dart';
 
-// Palette
-const Color _cBg = Color(0xFF0F172A);
-const Color _cCard = Color(0xFF1E293B);
-const Color _cAccent = Color(0xFF38BDF8);
-const Color _cTextMain = Color(0xFFF8FAFC);
-const Color _cTextSec = Color(0xFF94A3B8);
-const Color _cSuccess = Color(0xFF22C55E);
-const Color _cBorder = Color(0xFF334155);
-const Color _cDanger = Color(0xFFEF4444);
-const Color _cAvatarFallback = Color(0xFF1E40AF);
+const Color _pageBg = Color(0xFFF5F7FA);
+const Color _navy = Color(0xFF1A458B);
+const Color _primaryBlue = Color(0xFF155EEF);
+const Color _textDark = Color(0xFF111827);
+const Color _textGrey = Color(0xFF6B7280);
+const Color _cardGrey = Color(0xFFF3F4F6);
+const Color _onlineGreen = Color(0xFF22C55E);
+const Color _danger = Color(0xFFEF4444);
 
 /// Écran plein : attente du médecin, compte à rebours, option quitter.
 class WaitingRoomScreen extends StatefulWidget {
@@ -24,6 +25,7 @@ class WaitingRoomScreen extends StatefulWidget {
     super.key,
     required this.consultationTime,
     required this.doctorName,
+    this.doctorSpecialty,
     this.doctorAvatarUrl,
     required this.onLeaveRoom,
     this.onSyncUnload,
@@ -33,6 +35,7 @@ class WaitingRoomScreen extends StatefulWidget {
 
   final DateTime consultationTime;
   final String doctorName;
+  final String? doctorSpecialty;
   final String? doctorAvatarUrl;
   final Future<void> Function() onLeaveRoom;
   final void Function()? onSyncUnload;
@@ -45,71 +48,23 @@ class WaitingRoomScreen extends StatefulWidget {
 
 class _WaitingRoomScreenState extends State<WaitingRoomScreen>
     with TickerProviderStateMixin {
-  /// Fenêtre affichée : J-10 → RDV → J+10 (20 min au total), alignée sur le chat patient.
   static const _windowBeforeConsult = Duration(minutes: 10);
   static const _windowAfterConsult = Duration(minutes: 10);
 
-  /// Heure d’entrée effective dans la salle (compteur d’attente MM:SS).
   late final DateTime _roomEnteredAt;
 
   Timer? _tick;
   Timer? _validateTimer;
   StreamSubscription<bool>? _netSub;
-  late AnimationController _dotPulse;
-  late AnimationController _hourglassTurn;
-  late AnimationController _urgentScale;
-  /// Cercle principal qui pulse (agrandit / rétrécit).
-  late AnimationController _roomPulse;
-
-  static const _weekdays = [
-    'lundi',
-    'mardi',
-    'mercredi',
-    'jeudi',
-    'vendredi',
-    'samedi',
-    'dimanche',
-  ];
-  static const _months = [
-    'janvier',
-    'février',
-    'mars',
-    'avril',
-    'mai',
-    'juin',
-    'juillet',
-    'août',
-    'septembre',
-    'octobre',
-    'novembre',
-    'décembre',
-  ];
+  int _connectionDotPhase = 0;
 
   @override
   void initState() {
     super.initState();
     _roomEnteredAt = DateTime.now();
-    _roomPulse = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1400),
-    )..repeat(reverse: true);
-    _dotPulse = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    )..repeat(reverse: true);
-    _hourglassTurn = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 3),
-    )..repeat();
-    _urgentScale = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    );
-    _syncUrgentAnimation();
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
-      _syncUrgentAnimation();
-      setState(() {});
+      setState(() => _connectionDotPhase = (_connectionDotPhase + 1) % 4);
     });
     _netSub = WebRtcService.instance.socketConnected.listen((_) {
       if (mounted) setState(() {});
@@ -130,24 +85,13 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen>
           context: context,
           barrierColor: Colors.black54,
           builder: (dialogCtx) => AlertDialog(
-            backgroundColor: _cCard,
-            title: const Text(
-              'Consultation annulée',
-              style: TextStyle(
-                color: _cTextMain,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+            title: const Text('Consultation annulée'),
             content: const Text(
               'La consultation a été annulée.',
-              style: TextStyle(color: _cTextSec, height: 1.5),
+              style: TextStyle(height: 1.5),
             ),
             actions: [
               FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: _cAccent,
-                  foregroundColor: _cBg,
-                ),
                 onPressed: () => Navigator.pop(dialogCtx),
                 child: const Text('OK'),
               ),
@@ -164,19 +108,6 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen>
     CallChatContext.waitingRoomRouteActive = true;
   }
 
-  void _syncUrgentAnimation() {
-    final s = _secondsUntilConsult();
-    final urgent = s > 0 && s < 300;
-    if (urgent) {
-      if (!_urgentScale.isAnimating) {
-        _urgentScale.repeat(reverse: true);
-      }
-    } else {
-      _urgentScale.stop();
-      _urgentScale.value = 0;
-    }
-  }
-
   @override
   void dispose() {
     CallChatContext.waitingRoomRouteActive = false;
@@ -186,18 +117,32 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen>
     _validateTimer?.cancel();
     _netSub?.cancel();
     _tick?.cancel();
-    _dotPulse.dispose();
-    _hourglassTurn.dispose();
-    _urgentScale.dispose();
-    _roomPulse.dispose();
     super.dispose();
   }
 
-  String _formatElapsedWait() {
-    final sec = DateTime.now().difference(_roomEnteredAt).inSeconds.clamp(0, 86400);
-    final m = sec ~/ 60;
-    final s = sec % 60;
-    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  String _doctorDisplayName() {
+    final name = readableDoctorName(widget.doctorName);
+    final lower = name.toLowerCase();
+    if (lower.startsWith('dr.') || lower.startsWith('dr ')) return name;
+    return 'Dr. $name';
+  }
+
+  String _formatAppointmentClock() {
+    final l = widget.consultationTime.toLocal();
+    final hh = l.hour.toString().padLeft(2, '0');
+    final mm = l.minute.toString().padLeft(2, '0');
+    return '$hh:$mm';
+  }
+
+  String _estimatedWaitLabel(int secUntilConsult) {
+    if (secUntilConsult <= 0) return 'Bientôt';
+    final min = (secUntilConsult / 60).ceil().clamp(1, 99);
+    return '~ $min min';
+  }
+
+  String _connectionStatusText(bool netOk) {
+    if (!netOk) return 'Reconnexion en cours';
+    return 'Connexion en cours${'.' * _connectionDotPhase}';
   }
 
   int _secondsUntilConsult() {
@@ -217,62 +162,23 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen>
     return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
   }
 
-  String _formatConsultDateTime() {
-    final l = widget.consultationTime.toLocal();
-    final d = _weekdays[l.weekday - 1];
-    final cap = '${d[0].toUpperCase()}${d.substring(1)}';
-    final mon = _months[l.month - 1];
-    final hh = l.hour.toString().padLeft(2, '0');
-    final mm = l.minute.toString().padLeft(2, '0');
-    return '$cap ${l.day} $mon ${l.year} à $hh:$mm';
-  }
-
-  double _progressSinceWindowOpen() {
-    final open = widget.consultationTime.subtract(_windowBeforeConsult);
-    final end = widget.consultationTime.add(_windowAfterConsult);
-    final totalSec = end.difference(open).inSeconds;
-    if (totalSec <= 0) return 1;
-    final elapsed = DateTime.now().difference(open).inSeconds;
-    return (elapsed / totalSec).clamp(0.0, 1.0);
-  }
-
-  String _countdownHms(int sec) {
-    if (sec <= 0) return '00:00:00';
-    final h = sec ~/ 3600;
-    final m = (sec % 3600) ~/ 60;
-    final s = sec % 60;
-    return '${h.toString().padLeft(2, '0')}:'
-        '${m.toString().padLeft(2, '0')}:'
-        '${s.toString().padLeft(2, '0')}';
-  }
-
   Future<void> _confirmLeave() async {
     final ok = await showDialog<bool>(
       context: context,
       barrierColor: Colors.black54,
       builder: (ctx) => AlertDialog(
-        backgroundColor: _cCard,
-        title: const Text(
-          'Quitter la salle d\'attente ?',
-          style: TextStyle(
-            color: _cTextMain,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
+        title: const Text('Quitter la salle d\'attente ?'),
         content: const Text(
           'Vous pourrez y revenir depuis le bandeau du chat tant que la consultation est prévue.',
-          style: TextStyle(color: _cTextSec, height: 1.5),
+          style: TextStyle(height: 1.5),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Rester', style: TextStyle(color: _cAccent)),
+            child: const Text('Rester'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: _cDanger,
-              foregroundColor: _cTextMain,
-            ),
+            style: FilledButton.styleFrom(backgroundColor: _danger),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Quitter'),
           ),
@@ -285,371 +191,524 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen>
     }
   }
 
+  Future<void> _testMicAndCamera() async {
+    final ok = await PermissionService.instance
+        .ensureCameraAndMicrophonePermissions(context);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok
+              ? 'Microphone et caméra sont prêts pour la consultation.'
+              : 'Autorisez le micro et la caméra dans les paramètres.',
+        ),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _reportProblem() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Pour signaler un problème, contactez le support HeadsApp depuis Paramètres.',
+        ),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final sec = _secondsUntilConsult();
     final netOk = WebRtcService.instance.isSocketConnected;
-    final urgent = sec > 0 && sec < 300;
-    final timerColor = urgent ? _cDanger : _cAccent;
-    final progress = _progressSinceWindowOpen();
+    final specialty = readableDecryptedField(widget.doctorSpecialty?.toString());
 
     return Scaffold(
-      backgroundColor: _cBg,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        foregroundColor: _cTextMain,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _cTextMain),
-          onPressed: _confirmLeave,
-        ),
-        title: const Text(
-          'Salle d\'attente',
-          style: TextStyle(
-            color: _cTextMain,
-            fontWeight: FontWeight.w600,
-            fontSize: 18,
-          ),
-        ),
-        centerTitle: true,
-      ),
+      backgroundColor: _pageBg,
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
+            constraints: const BoxConstraints(maxWidth: 520),
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
               children: [
-                const SizedBox(height: 8),
-                Center(
-                  child: ScaleTransition(
-                    scale: Tween<double>(begin: 0.92, end: 1.08).animate(
-                      CurvedAnimation(
-                        parent: _roomPulse,
-                        curve: Curves.easeInOut,
-                      ),
-                    ),
-                    child: Container(
-                      width: 120,
-                      height: 120,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: _cAccent.withValues(alpha: 0.12),
-                        border: Border.all(
-                          color: _cAccent.withValues(alpha: 0.45),
-                          width: 3,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: _cAccent.withValues(alpha: 0.25),
-                            blurRadius: 28,
-                            spreadRadius: 2,
-                          ),
-                        ],
-                      ),
-                      child: Icon(
-                        Icons.sensors_rounded,
-                        size: 48,
-                        color: _cAccent,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  'Vous êtes dans la salle d\'attente…',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: _cTextMain,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    height: 1.25,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'Le médecin va vous rejoindre dans un instant',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: _cTextSec,
-                    fontSize: 15,
-                    height: 1.45,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Text(
-                  'Temps d\'attente',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: _cTextSec,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  _formatElapsedWait(),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: _cAccent,
-                    fontSize: 36,
-                    fontWeight: FontWeight.w800,
-                    fontFamily: 'monospace',
-                    letterSpacing: 2,
-                  ),
-                ),
-                const SizedBox(height: 28),
-                if (!netOk)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: _cCard,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: _cBorder),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.wifi_off_rounded, color: Colors.orange.shade400),
-                          const SizedBox(width: 10),
-                          const Expanded(
-                            child: Text(
-                              'Connexion interrompue — reconnexion en cours…',
-                              style: TextStyle(color: _cTextSec, fontSize: 13),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                // A. Carte médecin
-                Column(
+                Row(
                   children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: _cAccent, width: 3),
-                      ),
-                      padding: const EdgeInsets.all(3),
-                      child: CircleAvatar(
-                        radius: 36,
-                        backgroundColor: _cAvatarFallback,
-                        backgroundImage: widget.doctorAvatarUrl != null &&
-                                widget.doctorAvatarUrl!.isNotEmpty
-                            ? NetworkImage(widget.doctorAvatarUrl!)
-                            : null,
-                        child: widget.doctorAvatarUrl == null ||
-                                widget.doctorAvatarUrl!.isEmpty
-                            ? Text(
-                                _doctorInitials(),
-                                style: const TextStyle(
-                                  color: _cTextMain,
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              )
-                            : null,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
                     Text(
-                      widget.doctorName,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: _cTextMain,
-                      ),
+                      'HeadsApp',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            color: _navy,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 22,
+                            letterSpacing: -0.3,
+                          ),
                     ),
-                    const SizedBox(height: 10),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        FadeTransition(
-                          opacity: Tween<double>(begin: 0.4, end: 1).animate(
-                            CurvedAnimation(parent: _dotPulse, curve: Curves.easeInOut),
-                          ),
-                          child: Container(
-                            width: 8,
-                            height: 8,
-                            decoration: const BoxDecoration(
-                              color: _cSuccess,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          netOk ? 'En ligne' : 'Connexion…',
-                          style: TextStyle(
-                            color: netOk ? _cSuccess : _cTextSec,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
+                    const Spacer(),
+                    IconButton(
+                      onPressed: _confirmLeave,
+                      icon: const Icon(Icons.close_rounded, color: _textGrey),
                     ),
                   ],
                 ),
-                const SizedBox(height: 28),
-
-                // B. Compte à rebours
-                Container(
-                  padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                const SizedBox(height: 8),
+                Text(
+                  'Salle d\'attente',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: _textDark,
+                        fontSize: 26,
+                        letterSpacing: -0.4,
+                      ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: _primaryBlue,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'SESSION ACTIVE',
+                      style: TextStyle(
+                        color: _primaryBlue,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 11.5,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                _PractitionerCard(
+                  doctorName: _doctorDisplayName(),
+                  specialty: specialty,
+                  avatarUrl: widget.doctorAvatarUrl,
+                  initials: _doctorInitials(),
+                  isOnline: netOk,
+                ),
+                const SizedBox(height: 18),
+                _MainWaitingCard(
+                  connectionText: _connectionStatusText(netOk),
+                  secUntilConsult: sec,
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _InfoChipCard(
+                        icon: Icons.schedule_rounded,
+                        label: 'RENDEZ-VOUS',
+                        value: _formatAppointmentClock(),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _InfoChipCard(
+                        icon: Icons.hourglass_top_rounded,
+                        label: 'ATTENTE',
+                        value: _estimatedWaitLabel(sec),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 22),
+                DecoratedBox(
                   decoration: BoxDecoration(
-                    color: _cCard,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: _cBorder),
+                    borderRadius: BorderRadius.circular(999),
+                    gradient: const LinearGradient(
+                      colors: [
+                        Color(0xFFE8719A),
+                        Color(0xFF3B5998),
+                      ],
+                    ),
                     boxShadow: [
                       BoxShadow(
-                        color: _cAccent.withValues(alpha: 0.15),
-                        blurRadius: 24,
-                        spreadRadius: 0,
+                        color: const Color(0xFF3B5998).withValues(alpha: 0.25),
+                        blurRadius: 16,
                         offset: const Offset(0, 8),
                       ),
                     ],
                   ),
-                  child: Column(
-                    children: [
-                      const Text(
-                        'Votre consultation commence dans',
-                        style: TextStyle(
-                          color: _cTextSec,
-                          fontSize: 13,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      if (sec <= 0)
-                        const Text(
-                          'L\'appel peut démarrer',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: _cSuccess,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        )
-                      else
-                        ScaleTransition(
-                          scale: urgent
-                              ? Tween<double>(begin: 1.0, end: 1.02).animate(
-                                  CurvedAnimation(
-                                    parent: _urgentScale,
-                                    curve: Curves.easeInOut,
-                                  ),
-                                )
-                              : const AlwaysStoppedAnimation<double>(1),
-                          child: Text(
-                            _countdownHms(sec),
-                            style: TextStyle(
-                              fontSize: 52,
-                              fontWeight: FontWeight.w700,
-                              color: timerColor,
-                              fontFamily: 'monospace',
-                              letterSpacing: 2,
-                            ),
-                          ),
-                        ),
-                      const SizedBox(height: 20),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: LinearProgressIndicator(
-                          value: progress,
-                          minHeight: 6,
-                          backgroundColor: _cBorder,
-                          color: _cAccent,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        _formatConsultDateTime(),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: _cTextSec,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                // C. Statut
-                Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: _cCard,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: _cBorder),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      RotationTransition(
-                        turns: _hourglassTurn,
-                        child: const Icon(
-                          Icons.hourglass_top_rounded,
-                          color: _cAccent,
-                          size: 28,
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      const Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: _confirmLeave,
+                      borderRadius: BorderRadius.circular(999),
+                      child: const SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Text(
-                              'Vous êtes dans la salle d\'attente virtuelle',
+                              'Quitter la salle d\'attente',
                               style: TextStyle(
-                                color: _cTextMain,
-                                fontSize: 15,
+                                color: Colors.white,
                                 fontWeight: FontWeight.w700,
-                                height: 1.35,
+                                fontSize: 15,
                               ),
                             ),
-                            SizedBox(height: 8),
-                            Text(
-                              'Le médecin sera notifié de votre présence. '
-                              'L\'appel démarrera automatiquement à l\'heure prévue.',
-                              style: TextStyle(
-                                color: _cTextSec,
-                                fontSize: 13,
-                                height: 1.5,
-                              ),
+                            SizedBox(width: 8),
+                            Icon(
+                              Icons.logout_rounded,
+                              color: Colors.white,
+                              size: 20,
                             ),
                           ],
                         ),
                       ),
-                    ],
+                    ),
                   ),
                 ),
-                const SizedBox(height: 20),
-
-                // Quitter (bouton rouge plein en bas)
+                const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: () => _confirmLeave(),
-                    icon: const Icon(Icons.exit_to_app_rounded),
+                  height: 50,
+                  child: OutlinedButton.icon(
+                    onPressed: _testMicAndCamera,
+                    icon: const Icon(Icons.tune_rounded, color: _navy, size: 20),
                     label: const Text(
-                      'Quitter la salle d\'attente',
-                      style: TextStyle(fontWeight: FontWeight.w700),
+                      'Tester micro et caméra',
+                      style: TextStyle(
+                        color: _navy,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: _cDanger,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    style: OutlinedButton.styleFrom(
+                      backgroundColor: _cardGrey,
+                      side: BorderSide.none,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
                     ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                TextButton.icon(
+                  onPressed: _reportProblem,
+                  icon: Icon(Icons.info_outline_rounded, size: 18, color: Colors.grey.shade500),
+                  label: Text(
+                    'Signaler un problème',
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '© ${DateTime.now().year} HeadsApp. Tous droits réservés.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.grey.shade400,
+                    fontSize: 11,
                   ),
                 ),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _PractitionerCard extends StatelessWidget {
+  const _PractitionerCard({
+    required this.doctorName,
+    required this.specialty,
+    required this.avatarUrl,
+    required this.initials,
+    required this.isOnline,
+  });
+
+  final String doctorName;
+  final String specialty;
+  final String? avatarUrl;
+  final String initials;
+  final bool isOnline;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 18,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              CircleAvatar(
+                radius: 34,
+                backgroundColor: const Color(0xFFE8F0FE),
+                backgroundImage: avatarUrl != null && avatarUrl!.isNotEmpty
+                    ? NetworkImage(avatarUrl!)
+                    : null,
+                child: avatarUrl == null || avatarUrl!.isEmpty
+                    ? Text(
+                        initials,
+                        style: const TextStyle(
+                          color: _navy,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 18,
+                        ),
+                      )
+                    : null,
+              ),
+              if (isOnline)
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    width: 14,
+                    height: 14,
+                    decoration: BoxDecoration(
+                      color: _onlineGreen,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2.5),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'VOTRE PRATICIEN',
+                  style: TextStyle(
+                    color: _primaryBlue,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 10.5,
+                    letterSpacing: 0.7,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  doctorName,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _textDark,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 17,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                RichText(
+                  text: TextSpan(
+                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w500),
+                    children: [
+                      TextSpan(
+                        text: specialty.isNotEmpty ? specialty : 'Médecin',
+                        style: const TextStyle(color: _textGrey),
+                      ),
+                      TextSpan(
+                        text: ' • ${isOnline ? 'En ligne' : 'Connexion…'}',
+                        style: TextStyle(
+                          color: isOnline ? _onlineGreen : _textGrey,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MainWaitingCard extends StatelessWidget {
+  const _MainWaitingCard({
+    required this.connectionText,
+    required this.secUntilConsult,
+  });
+
+  final String connectionText;
+  final int secUntilConsult;
+
+  @override
+  Widget build(BuildContext context) {
+    final mainMessage = secUntilConsult <= 0
+        ? 'Votre médecin peut vous rejoindre.'
+        : 'Votre médecin vous rejoindra bientôt.';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(22, 28, 22, 20),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF2563EB),
+            Color(0xFF155EEF),
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: _primaryBlue.withValues(alpha: 0.35),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          const Positioned.fill(
+            child: CustomPaint(
+              painter: _WaitingWavePainter(),
+            ),
+          ),
+          Column(
+            children: [
+              Container(
+                width: 76,
+                height: 76,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.18),
+                ),
+                child: const Icon(
+                  Icons.videocam_rounded,
+                  color: Colors.white,
+                  size: 36,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                mainMessage,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 18,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Veuillez patienter, la consultation va commencer automatiquement.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.9),
+                  fontSize: 13.5,
+                  height: 1.45,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 22),
+              Text(
+                connectionText,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.88),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WaitingWavePainter extends CustomPainter {
+  const _WaitingWavePainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.12)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5;
+
+    for (var i = 0; i < 2; i++) {
+      final path = Path();
+      final baseY = size.height * (0.35 + i * 0.18);
+      path.moveTo(0, baseY);
+      for (double x = 0; x <= size.width; x += 8) {
+        final y = baseY + math.sin((x / size.width) * math.pi * 3 + i) * 10;
+        path.lineTo(x, y);
+      }
+      canvas.drawPath(path, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _InfoChipCard extends StatelessWidget {
+  const _InfoChipCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      decoration: BoxDecoration(
+        color: _cardGrey,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: _primaryBlue, size: 20),
+          const SizedBox(height: 10),
+          Text(
+            label,
+            style: const TextStyle(
+              color: _textGrey,
+              fontWeight: FontWeight.w700,
+              fontSize: 10,
+              letterSpacing: 0.6,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: const TextStyle(
+              color: _textDark,
+              fontWeight: FontWeight.w800,
+              fontSize: 18,
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -16,12 +16,48 @@ class DiscussionsPatientPage extends StatefulWidget {
     required this.patientName,
     this.patientPhotoPath,
     this.onConversationOpened,
+    this.asModalSheet = false,
   });
 
   final String patientId;
   final String patientName;
   final String? patientPhotoPath;
   final ValueChanged<int>? onConversationOpened;
+  final bool asModalSheet;
+
+  /// Ouvre la liste des discussions en panneau modal (icône messages).
+  static Future<void> openAsSheet(
+    BuildContext context, {
+    required String patientId,
+    required String patientName,
+    String? patientPhotoPath,
+    ValueChanged<int>? onConversationOpened,
+  }) {
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.45),
+      builder: (ctx) {
+        final h = MediaQuery.sizeOf(ctx).height;
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.viewInsetsOf(ctx).bottom,
+          ),
+          child: SizedBox(
+            height: h * 0.68,
+            child: DiscussionsPatientPage(
+              patientId: patientId,
+              patientName: patientName,
+              patientPhotoPath: patientPhotoPath,
+              onConversationOpened: onConversationOpened,
+              asModalSheet: true,
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   @override
   State<DiscussionsPatientPage> createState() => _DiscussionsPatientPageState();
@@ -37,8 +73,9 @@ class _DiscussionsPatientPageState extends State<DiscussionsPatientPage> {
   static const Color _avatarBg = Color(0xFFE8F0FE);
   static const Color _avatarIcon = Color(0xFF1A458B);
   static const Color _onlineGreen = Color(0xFF2ECC71);
-  static const Color _searchBg = Color(0xFFF0F4F8);
-  static const Color _searchHint = Color(0xFF9E9E9E);
+  static const Color _searchBg = Color(0xFFF1F4F8);
+  static const Color _searchBorder = Color(0xFFDDE4EE);
+  static const Color _searchHint = Color(0xFF9CA3AF);
 
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
@@ -81,10 +118,8 @@ class _DiscussionsPatientPageState extends State<DiscussionsPatientPage> {
     }).toList();
   }
 
-  String? _patientPhotoUrl() {
-    final url = ApiService.resolveMediaUrl(widget.patientPhotoPath);
-    return url.isEmpty ? null : url;
-  }
+  String? _patientPhotoUrl() =>
+      ApiService.resolveMediaUrlOrNull(widget.patientPhotoPath);
 
   Future<void> _loadSeenConversations() async {
     try {
@@ -198,6 +233,10 @@ class _DiscussionsPatientPageState extends State<DiscussionsPatientPage> {
   }
 
   Future<void> _handleBack() async {
+    if (widget.asModalSheet) {
+      Navigator.of(context).pop();
+      return;
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('lastRoute', 'espace_patient');
     if (!mounted) return;
@@ -215,11 +254,12 @@ class _DiscussionsPatientPageState extends State<DiscussionsPatientPage> {
 
   Widget _buildSearchBar() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 14),
+      padding: EdgeInsets.fromLTRB(20, widget.asModalSheet ? 0 : 4, 20, 14),
       child: Container(
         decoration: BoxDecoration(
           color: _searchBg,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(widget.asModalSheet ? 24 : 14),
+          border: Border.all(color: _searchBorder, width: 1),
         ),
         child: TextField(
           controller: _searchController,
@@ -239,6 +279,8 @@ class _DiscussionsPatientPageState extends State<DiscussionsPatientPage> {
               color: _searchHint,
               size: 22,
             ),
+            filled: true,
+            fillColor: _searchBg,
             border: InputBorder.none,
             enabledBorder: InputBorder.none,
             focusedBorder: InputBorder.none,
@@ -248,6 +290,49 @@ class _DiscussionsPatientPageState extends State<DiscussionsPatientPage> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildSheetHandle() {
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.only(top: 10, bottom: 6),
+        width: 40,
+        height: 4,
+        decoration: BoxDecoration(
+          color: const Color(0xFFD0D5DD),
+          borderRadius: BorderRadius.circular(2),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSheetHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 0, 16, 4),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: IconButton(
+              onPressed: _handleBack,
+              icon: const Icon(Icons.close_rounded, size: 24),
+              color: const Color(0xFF9E9E9E),
+              tooltip: 'Fermer',
+            ),
+          ),
+          Text(
+            'Discussions',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: _titleNavy,
+                  fontSize: 20,
+                  letterSpacing: -0.2,
+                ),
+          ),
+        ],
       ),
     );
   }
@@ -341,11 +426,20 @@ class _DiscussionsPatientPageState extends State<DiscussionsPatientPage> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.zero,
         itemCount: conversations.length,
-        separatorBuilder: (_, __) => const Divider(
-          height: 1,
-          thickness: 1,
-          color: _dividerGrey,
-        ),
+        separatorBuilder: (_, __) => widget.asModalSheet
+            ? Padding(
+                padding: const EdgeInsets.only(left: 90),
+                child: const Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: _dividerGrey,
+                ),
+              )
+            : const Divider(
+                height: 1,
+                thickness: 1,
+                color: _dividerGrey,
+              ),
         itemBuilder: (context, i) =>
             _buildConversationTile(conversations[i]),
       ),
@@ -481,18 +575,32 @@ class _DiscussionsPatientPageState extends State<DiscussionsPatientPage> {
 
   @override
   Widget build(BuildContext context) {
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (widget.asModalSheet) ...[
+          _buildSheetHandle(),
+          _buildSheetHeader(),
+        ] else
+          _buildHeader(),
+        _buildSearchBar(),
+        Expanded(child: _buildBody()),
+      ],
+    );
+
+    if (widget.asModalSheet) {
+      return ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        child: Material(
+          color: Colors.white,
+          child: content,
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildHeader(),
-            _buildSearchBar(),
-            Expanded(child: _buildBody()),
-          ],
-        ),
-      ),
+      body: SafeArea(child: content),
     );
   }
 }

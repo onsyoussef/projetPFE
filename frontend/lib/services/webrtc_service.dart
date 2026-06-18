@@ -702,6 +702,16 @@ class WebRtcService {
     return !nextEnabled;
   }
 
+  bool toggleVideo() {
+    final tracks = _localStream?.getVideoTracks() ?? const [];
+    if (tracks.isEmpty) return false;
+    final nextEnabled = !tracks.first.enabled;
+    for (final t in tracks) {
+      t.enabled = nextEnabled;
+    }
+    return nextEnabled;
+  }
+
   Future<void> setSpeakerphone(bool enabled) async {
     await rtc.Helper.setSpeakerphoneOn(enabled);
   }

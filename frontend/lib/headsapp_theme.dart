@@ -27,8 +27,8 @@ class HeadsAppColors {
 
   /// Écrans d'authentification (login, inscription, reset).
   static const Color authInputFill = Color(0xFFF3F4F6);
-  static const Color authGradientStart = Color(0xFFC7B8D6);
-  static const Color authGradientEnd = Color(0xFF3B82F6);
+  static const Color authGradientStart = Color(0xFFE57399);
+  static const Color authGradientEnd = Color(0xFF2C539E);
   static const Color authInfoBackground = Color(0xFFEEF4FB);
 }
 

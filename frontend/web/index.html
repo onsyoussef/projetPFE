@@ -33,6 +33,10 @@
 
   <title>frontend</title>
   <link rel="manifest" href="manifest.json">
+  <!-- Moteur HTML : évite le téléchargement CanvasKit depuis gstatic.com (réseaux restrictifs). -->
+  <script>
+    window.flutterWebRenderer = 'html';
+  </script>
 </head>
 <body>
   <!-- PDF.js UMD requis par pdfx au bootstrap Web (assert checkPdfjsLibInstallation).
