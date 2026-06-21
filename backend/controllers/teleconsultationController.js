@@ -18,6 +18,45 @@ const {
 } = require('../services/utilsService');
 const { emitToConversation, emitToUserId } = require('../services/realtimeGateway');
 const { decrypt } = require('../services/cryptoService');
+const {
+  notifyDoctorTeleconsultRequest,
+  notifyDoctorTeleconsultForm,
+} = require('../services/doctorNotifyService');
+const { notifyPatientPushAndSocket } = require('../services/patientNotifyService');
+const { assertFreeMessagingAllowed } = require('../services/messagingGateService');
+
+async function syncFormAttachmentsToChatMessage(formId) {
+  const fid = String(formId || '').trim();
+  if (!mongoose.Types.ObjectId.isValid(fid)) return;
+  const form = await TeleconsultationForm.findById(fid)
+    .select('conversation attachments motif symptomes')
+    .lean();
+  if (!form || !form.conversation) return;
+  const attachments = Array.isArray(form.attachments) ? form.attachments : [];
+  const convId = String(form.conversation);
+  const updated = await Message.findOneAndUpdate(
+    {
+      conversation: form.conversation,
+      type: 'form_teleconsult',
+      'payload.formId': fid,
+    },
+    {
+      $set: {
+        'payload.attachments': attachments,
+        'payload.motif': form.motif || '',
+        'payload.symptomes': form.symptomes || '',
+      },
+    },
+    { returnDocument: 'after' },
+  ).lean();
+  if (updated) {
+    emitToConversation(convId, 'chat:new_activity', {
+      conversationId: convId,
+      messageId: String(updated._id),
+      type: 'form_teleconsult',
+    });
+  }
+}
 
 async function applyTeleconsultRequestDecision(requestId, doctorId, decision, rejectionMotifRaw) {
   const rid = String(requestId || '').trim();
@@ -83,7 +122,16 @@ async function applyTeleconsultRequestDecision(requestId, doctorId, decision, re
           openChat: false,
           rejectionMotif: motifTrim || null,
         };
-  if (patientId) emitToUserId(patientId, 'patient:teleconsult_request_decision', payloadPatient);
+  if (patientId) {
+    await notifyPatientPushAndSocket({
+      patientId,
+      socketEvent: 'patient:teleconsult_request_decision',
+      title: payloadPatient.title,
+      body: payloadPatient.body,
+      pushType: 'teleconsult_request_decision',
+      payload: payloadPatient,
+    });
+  }
   return { ok: true, status: reqDoc.status };
 }
 
@@ -101,13 +149,23 @@ async function createRequest(req, res) {
       motif: motif || '',
       letterBody: letterTrim,
     });
-    await Message.create({
+    const msg = await Message.create({
       conversation: conversationId,
       fromType: 'system',
       type: 'request_teleconsult',
-      content: 'Demande de téléconsultation envoyée.',
+      content: motif ? String(motif).trim() : 'Demande de téléconsultation envoyée.',
       payload: { requestId: reqDoc._id.toString(), motif: motif || '', letterBody: letterTrim },
     });
+    try {
+      await notifyDoctorTeleconsultRequest({
+        conversationId,
+        requestId: reqDoc._id,
+        messageId: msg._id,
+        motif: motif || '',
+      });
+    } catch (notifyErr) {
+      console.error('[NOTIFY] teleconsult request', notifyErr);
+    }
     return res.status(201).json({ message: 'Demande envoyée.', id: reqDoc._id.toString() });
   } catch (err) {
     console.error('Erreur /teleconsultations/request', err);
@@ -135,14 +193,26 @@ async function createForm(req, res) {
       workflowStatus: 'pending',
     });
     const syncChat = notifyChat !== false && notifyChat !== 'false';
+    let formMsg = null;
     if (syncChat) {
-      await Message.create({
+      formMsg = await Message.create({
         conversation: conversationId,
         fromType: 'system',
         type: 'form_teleconsult',
         content: 'Formulaire de téléconsultation envoyé.',
-        payload: { formId: form._id.toString(), motif, symptomes },
+        payload: { formId: form._id.toString(), motif, symptomes, attachments: [] },
       });
+    }
+    try {
+      await notifyDoctorTeleconsultForm({
+        conversationId,
+        formId: form._id,
+        messageId: formMsg?._id,
+        motif,
+        symptomes,
+      });
+    } catch (notifyErr) {
+      console.error('[NOTIFY] teleconsult form', notifyErr);
     }
     await persistAutoHl7ForConversation({
       conversationId,
@@ -327,6 +397,12 @@ async function patchFormDecision(req, res) {
     form.status = decision === 'accept' ? 'accepted' : 'rejected';
     if (form.status === 'accepted') form.workflowStatus = 'pending';
     await form.save();
+    const doctor = await Doctor.findById(doctorId).select('fullName photoPath').lean();
+    const doctorName = decrypt(doctor?.fullName) || 'Médecin';
+    const doctorPhotoPath = doctor?.photoPath || null;
+    const patientId = form.patient ? String(form.patient) : '';
+    const convIdStr = form.conversation ? String(form.conversation) : '';
+
     if (form.conversation) {
       await Message.create({
         conversation: form.conversation,
@@ -337,6 +413,32 @@ async function patchFormDecision(req, res) {
             ? 'Votre formulaire de téléconsultation a été accepté par le médecin.'
             : 'Votre formulaire de téléconsultation n’a pas été retenu par le médecin pour le moment.',
         payload: { kind: decision === 'accept' ? 'form_accepted' : 'form_rejected', formId: String(form._id) },
+      });
+      emitToConversation(convIdStr, 'chat:new_activity', { conversationId: convIdStr });
+    }
+
+    if (patientId) {
+      const payloadPatient = {
+        status: decision === 'accept' ? 'accepted' : 'rejected',
+        title: decision === 'accept' ? 'Formulaire accepté ✅' : 'Formulaire refusé',
+        body:
+          decision === 'accept'
+            ? `Dr. ${doctorName} a accepté votre formulaire de téléconsultation.`
+            : `Dr. ${doctorName} n'a pas retenu votre formulaire pour le moment.`,
+        conversationId: convIdStr,
+        doctorId,
+        doctorName,
+        doctorPhotoPath,
+        formId: String(form._id),
+        openChat: decision === 'accept',
+      };
+      await notifyPatientPushAndSocket({
+        patientId,
+        socketEvent: 'patient:teleconsult_form_decision',
+        title: payloadPatient.title,
+        body: payloadPatient.body,
+        pushType: 'teleconsult_form_decision',
+        payload: payloadPatient,
       });
     }
     return res.json({ ok: true, status: form.status });
@@ -466,6 +568,7 @@ async function addFormAttachment(req, res) {
       uploadedAt: new Date(),
     });
     await form.save();
+    await syncFormAttachmentsToChatMessage(formId);
     const last = form.attachments[form.attachments.length - 1];
     return res.status(201).json({ message: 'Fichier ajouté au formulaire.', attachment: last });
   } catch (err) {
@@ -496,6 +599,11 @@ async function uploadTeleconsultFile(req, res) {
     const convUpload = await Conversation.findById(conversationId).select('sessionStatus').lean();
     if (convUpload && convUpload.sessionStatus === 'cloture') {
       return res.status(403).json({ message: "Cette session est clôturée. Impossible d'envoyer un message." });
+    }
+    try {
+      await assertFreeMessagingAllowed(conversationId, 'file');
+    } catch (gateErr) {
+      return res.status(gateErr.statusCode || 403).json({ message: gateErr.message });
     }
     const cloudUpload = await uploadChatFileToCloudinary(
       req.file.path,

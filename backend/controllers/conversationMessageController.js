@@ -12,8 +12,13 @@ const {
   notifyPatientCallMissedPush,
 } = require('../services/utilsService');
 const { emitToConversation, emitToUserId } = require('../services/realtimeGateway');
+const {
+  ensureAbsenceNoticeInConversation,
+  maybeSendDoctorAbsenceAutoReply,
+} = require('../services/doctorAbsenceService');
 const { streamHttpsUrlToClient } = require('../services/streamHttpsFile');
 const { decrypt } = require('../services/cryptoService');
+const { assertFreeMessagingAllowed } = require('../services/messagingGateService');
 
 async function doctorMinuteOccupied(doctorId, scheduledAtIso, opts = {}) {
   const excludeMessageId = opts.excludeMessageId ? String(opts.excludeMessageId) : null;
@@ -81,6 +86,11 @@ async function createConversation(req, res) {
         type: 'question_physique',
         content: 'Avez‑vous déjà eu une consultation physique avec ce médecin ?',
       });
+    }
+    try {
+      await ensureAbsenceNoticeInConversation(conv._id, doctorId);
+    } catch (absenceErr) {
+      console.error('[absence] ensureAbsenceNoticeInConversation', absenceErr);
     }
     return res.json({ conversationId: conv._id.toString() });
   } catch (err) {
@@ -180,6 +190,14 @@ async function postMessage(req, res) {
     }
 
     const msgType = type || 'text';
+    if (fromType !== 'system') {
+      try {
+        await assertFreeMessagingAllowed(conversationId, msgType);
+      } catch (gateErr) {
+        return res.status(gateErr.statusCode || 403).json({ message: gateErr.message });
+      }
+    }
+
     if (msgType === 'teleconsult_scheduled' && fromType === 'doctor' && payload && payload.scheduledAt) {
       const st = await doctorTeleconsultSlotConflict(conversationId, payload.scheduledAt, null);
       if (st === 'notfound') {
@@ -245,6 +263,17 @@ async function postMessage(req, res) {
       content: content || '',
       payload: payload || {},
     });
+
+    if (fromType === 'patient') {
+      try {
+        await maybeSendDoctorAbsenceAutoReply(conversationId, {
+          type: msgType,
+          payload: payload || {},
+        });
+      } catch (absenceErr) {
+        console.error('[absence] maybeSendDoctorAbsenceAutoReply', absenceErr);
+      }
+    }
 
     if (type === 'chat_closed' && fromType === 'doctor') {
       await Message.create({

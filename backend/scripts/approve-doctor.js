@@ -20,7 +20,7 @@ async function main() {
   const doctor = await Doctor.findByIdAndUpdate(
     doctorId,
     { verificationStatus: 'verified' },
-    { new: true },
+    { returnDocument: 'after' },
   ).select('verificationStatus specialty');
   if (!doctor) {
     console.error('Médecin introuvable:', doctorId);

@@ -2,9 +2,7 @@ const express = require('express');
 const router = express.Router();
 
 const { verifyToken } = require('../middleware/authJwt');
-const {
-  requireFormulaireUrgenceWrite,
-} = require('../middleware/miscAuthz');
+const { requireFormulaireUrgenceWrite } = require('../middleware/miscAuthz');
 const surveillanceController = require('../controllers/surveillanceController');
 const formulaireUrgenceController = require('../controllers/formulaireUrgenceController');
 

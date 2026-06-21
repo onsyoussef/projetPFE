@@ -181,7 +181,7 @@ async function patchDoctorVerification(req, res) {
     };
 
     const doctor = await Doctor.findByIdAndUpdate(doctorId, update, {
-      new: true,
+      returnDocument: 'after',
       runValidators: true,
     }).lean();
 
@@ -189,19 +189,27 @@ async function patchDoctorVerification(req, res) {
       return res.status(404).json({ message: 'Médecin introuvable.' });
     }
 
-    void notifyDoctorVerificationDecision(doctor, {
+    const mapped = mapAdminDoctor(doctor);
+    const notifyResult = await notifyDoctorVerificationDecision(doctor, {
       status,
       reason: status === 'rejected' ? reason : null,
-    }).catch((err) => {
-      console.error('[VERIFY-NOTIFY] échec notification médecin:', err);
+      emailOverride: mapped.email,
+      fullNameOverride: mapped.fullName,
     });
+
+    const emailHint = notifyResult.emailSent
+      ? ' Un e-mail de notification a été envoyé au médecin.'
+      : notifyResult.errors.length > 0
+        ? ` Notification e-mail non envoyée (${notifyResult.errors.join(' · ')}).`
+        : '';
 
     return res.json({
       message:
-        status === 'verified'
-          ? 'Compte médecin approuvé. Le médecin sera notifié par e-mail et notification.'
-          : 'Inscription refusée. Le médecin sera notifié par e-mail et notification.',
-      doctor: mapAdminDoctor(doctor),
+        (status === 'verified'
+          ? 'Compte médecin approuvé.'
+          : 'Inscription refusée.') + emailHint,
+      doctor: mapped,
+      notification: notifyResult,
     });
   } catch (err) {
     console.error('Erreur PATCH /admin/doctors/:doctorId/verification', err);

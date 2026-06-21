@@ -17,10 +17,6 @@ async function requireFormulaireUrgenceRead(req, res, next) {
     }
     if (!req.auth) return res.status(401).json({ message: 'Authentification requise.' });
     if (req.auth.role === 'patient' && String(req.auth.sub) === patientId) return next();
-    if (req.auth.role === 'doctor') {
-      if (!(await assertDoctorVerifiedForRequest(req, res))) return;
-      return next();
-    }
     return res.status(403).json({ message: 'Accès non autorisé à cette ressource.' });
   } catch (e) {
     console.error('requireFormulaireUrgenceRead', e);

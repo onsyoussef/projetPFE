@@ -8,6 +8,7 @@ const { socketByUserId, userBySocketId, activeCalls, waitingRooms, patientAppFor
 const { resolveSocketId, emitToConversation, emitToUserId } = require('../services/realtimeGateway');
 const { saveCallLogMessage, conversationIdFromCallRoomId } = require('../services/callService');
 const { persistWaitingRoomEnter, persistWaitingRoomLeave } = require('../services/waitingRoomService');
+const { notifyDoctorWaitingRoom } = require('../services/doctorNotifyService');
 const {
   getUserInfoByUserId,
   notifyPatientIncomingCall,
@@ -164,6 +165,17 @@ function registerSocketHandlers(io) {
         patientName,
         enteredAt: new Date(enteredAtMs).toISOString(),
       });
+    }
+    try {
+      await notifyDoctorWaitingRoom({
+        conversationId,
+        doctorId,
+        patientId,
+        patientName,
+        enteredAt: enteredAtMs,
+      });
+    } catch (notifyErr) {
+      console.error('[NOTIFY] waiting room', notifyErr);
     }
   });
 

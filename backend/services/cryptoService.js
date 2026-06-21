@@ -39,6 +39,24 @@ function assertCryptoEnv() {
 }
 
 let _cachedEncryptionKey = null;
+let _decryptFailCount = 0;
+let _decryptFailSummaryLogged = false;
+
+function logDecryptFailure(msg) {
+  _decryptFailCount += 1;
+  if (process.env.DEBUG_CRYPTO === '1') {
+    console.warn('[CRYPTO] Échec déchiffrement:', msg);
+    return;
+  }
+  if (!_decryptFailSummaryLogged) {
+    _decryptFailSummaryLogged = true;
+    console.warn(
+      '[CRYPTO] Échec déchiffrement — la clé ENCRYPTION_KEY ne correspond probablement pas aux données en base, ou le champ est corrompu.',
+      msg,
+      '(Les prochains échecs sont masqués ; définissez DEBUG_CRYPTO=1 pour tout voir.)',
+    );
+  }
+}
 
 function getEncryptionKey() {
   if (_cachedEncryptionKey) return _cachedEncryptionKey;
@@ -59,6 +77,15 @@ function warmEncryptionKey() {
   getEncryptionKey();
 }
 
+/** Vérifie que la clé courante chiffre/déchiffre correctement. */
+function verifyEncryptionRoundTrip() {
+  const sample = encrypt('__headsapp_crypto_probe__');
+  const out = decrypt(sample);
+  if (out !== '__headsapp_crypto_probe__') {
+    throw new Error('Round-trip chiffrement échoué avec ENCRYPTION_KEY actuelle.');
+  }
+}
+
 function getHmacKey() {
   const raw = String(process.env.HMAC_KEY || '').trim();
   if (!raw) {
@@ -75,7 +102,14 @@ function isEncryptedPayload(value) {
   const parts = raw.split(':');
   if (parts.length !== 3) return false;
   const hex = /^[0-9a-fA-F]+$/;
-  return parts.every((part) => part.length > 0 && hex.test(part));
+  const [ivHex, authTagHex, encryptedHex] = parts;
+  if (!hex.test(ivHex) || !hex.test(authTagHex) || !hex.test(encryptedHex)) {
+    return false;
+  }
+  // AES-256-GCM : IV 12 octets, authTag 16 octets.
+  if (ivHex.length !== 24 || authTagHex.length !== 32) return false;
+  if (encryptedHex.length < 2 || encryptedHex.length % 2 !== 0) return false;
+  return true;
 }
 
 function encrypt(text) {
@@ -109,7 +143,7 @@ function decrypt(payload) {
     if (msg.includes('ENCRYPTION_KEY')) {
       console.warn('[CRYPTO] Configuration chiffrement:', msg);
     } else {
-      console.warn('[CRYPTO] Échec déchiffrement (données ou clé):', msg);
+      logDecryptFailure(msg);
     }
     return '';
   }
@@ -169,6 +203,7 @@ module.exports = {
   isEncryptedPayload,
   assertCryptoEnv,
   warmEncryptionKey,
+  verifyEncryptionRoundTrip,
   hashEmail,
   decryptPatient,
   decryptDoctor,

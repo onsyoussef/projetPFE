@@ -10,6 +10,7 @@ const registerSocketHandlers = require('./sockets/registerSocketHandlers');
 const { setIo } = require('./services/realtimeGateway');
 const { hydrateWaitingRoomsFromDb } = require('./services/waitingRoomService');
 const { initPushNotifications } = require('./services/pushNotificationService');
+const { verifySmtpConnection } = require('./services/emailService');
 
 process.on('unhandledRejection', (reason) => {
   console.error('[FATAL] Unhandled promise rejection:', reason);
@@ -29,10 +30,11 @@ if (!JWT_SECRET) {
   process.exit(1);
 }
 
-const { assertCryptoEnv, warmEncryptionKey } = require('./services/cryptoService');
+const { assertCryptoEnv, warmEncryptionKey, verifyEncryptionRoundTrip } = require('./services/cryptoService');
 try {
   assertCryptoEnv();
   warmEncryptionKey();
+  verifyEncryptionRoundTrip();
 } catch (err) {
   console.error('[FATAL] Configuration chiffrement invalide:', err.message);
   process.exit(1);
@@ -170,6 +172,28 @@ const io = new Server(server, {
 setIo(io);
 registerSocketHandlers(io);
 initPushNotifications();
+(async () => {
+  const { isEmailConfigured } = require('./services/emailService');
+  if (!isEmailConfigured()) {
+    console.warn(
+      '[EMAIL] Aucun provider configuré (BREVO_API_KEY, RESEND_API_KEY ou SMTP_USER/SMTP_PASS). Les e-mails ne seront pas envoyés.',
+    );
+    return;
+  }
+  const smtpCheck = await verifySmtpConnection();
+  if (smtpCheck.ok) {
+    console.log(
+      '[EMAIL] Provider(s) actif(s):',
+      (smtpCheck.providers || ['ok']).join(', '),
+    );
+  } else {
+    console.warn(
+      '[EMAIL] Connexion refusée:',
+      smtpCheck.message,
+      '— Régénérez le mot de passe d’application Gmail ou configurez BREVO_API_KEY.',
+    );
+  }
+})();
 
 mongoose
   .connect(

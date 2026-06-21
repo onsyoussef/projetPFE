@@ -11,6 +11,7 @@ const Message = require('../models/Message');
 const Prescription = require('../models/Prescription');
 const { assertDoctorVerifiedForRequest } = require('../services/doctorVerificationService');
 const { buildPrescriptionPdfBuffer } = require('../services/prescriptionPdfService');
+const { assertFreeMessagingAllowed } = require('../services/messagingGateService');
 const {
   isConfigured: isCloudinaryConfigured,
   uploadPdfBufferToCloudinary,
@@ -266,6 +267,13 @@ async function createPrescriptionForConversation(req, res) {
     if (!conv) return res.status(404).json({ message: 'Conversation introuvable.' });
     if (String(conv.doctor) !== doctorId) return res.status(403).json({ message: 'Accès refusé.' });
     if (conv.sessionStatus === 'cloture') return res.status(403).json({ message: "Cette session est clôturée. Impossible d'envoyer une ordonnance." });
+    if (source !== 'teleconsult') {
+      try {
+        await assertFreeMessagingAllowed(conversationId, 'prescription');
+      } catch (gateErr) {
+        return res.status(gateErr.statusCode || 403).json({ message: gateErr.message });
+      }
+    }
     const [doctor, patient] = await Promise.all([
       Doctor.findById(doctorId).select('fullName specialty').lean(),
       Patient.findById(conv.patient).select('fullName').lean(),

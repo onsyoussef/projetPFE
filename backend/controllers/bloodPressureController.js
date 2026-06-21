@@ -11,6 +11,8 @@ const {
   toMeasurementDto,
   toAlertDto,
 } = require('../services/bloodPressureService');
+const { notifyDoctorBloodPressureAlert } = require('../services/doctorNotifyService');
+const { decrypt } = require('../services/cryptoService');
 
 function parsePositiveInt(value) {
   const n = Number(value);
@@ -36,7 +38,7 @@ async function assertDoctorPatientAccess(doctorId, patientId) {
   return Conversation.findOne({ doctor: doctorId, patient: patientId }).select('_id doctor patient').lean();
 }
 
-async function notifyDoctorsBloodPressure(patientId, measurementDto) {
+async function notifyDoctorsBloodPressure(patientId, measurementDto, alertDto) {
   try {
     const convs = await Conversation.find({ patient: patientId })
       .select('doctor _id')
@@ -44,12 +46,35 @@ async function notifyDoctorsBloodPressure(patientId, measurementDto) {
     const payload = {
       patientId: String(patientId),
       measurement: measurementDto,
+      alert: alertDto || null,
     };
+    let patientName = 'Patient';
+    const patient = await Patient.findById(patientId).select('fullName').lean();
+    if (patient?.fullName) {
+      try {
+        patientName = decrypt(patient.fullName) || patientName;
+      } catch (_) {
+        // ignore
+      }
+    }
     const notifiedDoctors = new Set();
     for (const conv of convs) {
       const doctorId = String(conv.doctor);
       if (!notifiedDoctors.has(doctorId)) {
         emitToUserId(doctorId, 'patient:blood_pressure', payload);
+        if (alertDto) {
+          try {
+            await notifyDoctorBloodPressureAlert({
+              doctorId,
+              patientId,
+              patientName,
+              conversationId: conv._id,
+              alert: alertDto,
+            });
+          } catch (notifyErr) {
+            console.error('[NOTIFY] blood pressure alert', notifyErr);
+          }
+        }
         notifiedDoctors.add(doctorId);
       }
       emitToConversation(String(conv._id), 'patient:blood_pressure', payload);
@@ -161,7 +186,7 @@ async function postMeasurement(req, res) {
       meanArterialPressure: pam,
       heartRate,
       measuredAt,
-      source: String(body.source || 'ble_esp32'),
+      source: String(body.source || 'manual'),
       deviceName: String(body.deviceName || '').trim() || undefined,
     });
 
@@ -180,11 +205,12 @@ async function postMeasurement(req, res) {
     }
 
     const measurementDto = toMeasurementDto(measurement);
-    await notifyDoctorsBloodPressure(patientId, measurementDto);
+    const alertDto = alert ? toAlertDto(alert) : null;
+    await notifyDoctorsBloodPressure(patientId, measurementDto, alertDto);
 
     return res.status(201).json({
       measurement: measurementDto,
-      alert: alert ? toAlertDto(alert) : null,
+      alert: alertDto,
     });
   } catch (err) {
     console.error('POST /patient/blood-pressure/measurements', err);

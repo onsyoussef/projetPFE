@@ -32,6 +32,10 @@ const {
   assertPasswordMin8,
 } = require('../services/utilsService');
 const { emitToConversation } = require('../services/realtimeGateway');
+const {
+  broadcastDoctorAbsence,
+  emitDoctorStatusToConversations,
+} = require('../services/doctorAbsenceService');
 
 async function getDoctorConversations(req, res) {
   try {
@@ -487,6 +491,8 @@ async function patchDoctorSettings(req, res) {
     if (!doctor) {
       return res.status(404).json({ message: 'Médecin introuvable.' });
     }
+    const previousAutoReplyEnabled = doctor.autoReplyEnabled === true;
+    const previousAbsenceMessage = doctor.absenceMessage;
     if (Array.isArray(body.workingTimeSlots) && body.workingTimeSlots.length > 0) {
       doctor.workingTimeSlots = body.workingTimeSlots.map((slot) => ({
         start: String(slot.start || '09:00'),
@@ -508,7 +514,34 @@ async function patchDoctorSettings(req, res) {
     if (typeof body.absenceEmergencyOnly === 'boolean') {
       doctor.absenceEmergencyOnly = body.absenceEmergencyOnly;
     }
+
+    const enabledNow = doctor.autoReplyEnabled === true;
+    const toggledOn = !previousAutoReplyEnabled && enabledNow;
+    const toggledOff = previousAutoReplyEnabled && !enabledNow;
+    const absenceMessageChanged =
+      body.absenceMessage != null &&
+      String(body.absenceMessage).trim() !== String(previousAbsenceMessage || '').trim();
+
+    if (toggledOn || toggledOff || (enabledNow && absenceMessageChanged)) {
+      doctor.status = enabledNow ? 'unavailable' : 'available';
+      doctor.statusUpdatedAt = new Date();
+    }
+
     await doctor.save();
+
+    if (enabledNow && (toggledOn || absenceMessageChanged)) {
+      await broadcastDoctorAbsence({
+        doctorId: doctor._id,
+        absenceMessage: doctor.absenceMessage,
+        previousEnabled: previousAutoReplyEnabled,
+        previousMessage: previousAbsenceMessage,
+      });
+    }
+
+    if (toggledOn || toggledOff || absenceMessageChanged) {
+      await emitDoctorStatusToConversations(doctor);
+    }
+
     const workingTimeSlots = Array.isArray(doctor.workingTimeSlots) && doctor.workingTimeSlots.length > 0
       ? doctor.workingTimeSlots
       : [{ start: doctor.workingHoursStart ?? '09:00', end: doctor.workingHoursEnd ?? '18:00' }];

@@ -42,7 +42,7 @@ function toMeasurementDto(doc) {
     pam: computePam(pas, pad, doc.meanArterialPressure),
     heartRate: doc.heartRate == null ? null : Number(doc.heartRate),
     measuredAt: doc.measuredAt,
-    source: doc.source || 'ble_esp32',
+      source: doc.source || 'manual',
     deviceName: doc.deviceName || null,
   };
 }

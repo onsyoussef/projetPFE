@@ -7,7 +7,8 @@
     "start": "node app.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "test:cloudinary-url": "node scripts/test-cloudinary-raw-url.js",
-    "generate-crypto-keys": "node scripts/generate-crypto-keys.js"
+    "generate-crypto-keys": "node scripts/generate-crypto-keys.js",
+    "test:email": "node scripts/test-email.js"
   },
   "engines": {
     "node": ">=20"

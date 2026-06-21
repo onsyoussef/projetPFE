@@ -28,6 +28,8 @@ const messageSchema = new mongoose.Schema(
         'call_event',
         /** Ordonnance PDF (médecin → patient). */
         'prescription',
+        /** Message automatique du médecin en mode absence. */
+        'doctor_absence',
       ],
       default: 'text',
     },

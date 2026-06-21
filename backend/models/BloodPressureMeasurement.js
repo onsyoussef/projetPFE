@@ -16,7 +16,7 @@ const bloodPressureMeasurementSchema = new mongoose.Schema(
     source: {
       type: String,
       enum: ['ble_esp32', 'manual'],
-      default: 'ble_esp32',
+      default: 'manual',
     },
     deviceName: { type: String, trim: true },
   },

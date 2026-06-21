@@ -5,8 +5,9 @@
 const RendezVous = require('../models/RendezVous');
 const Conversation = require('../models/Conversation');
 const Message = require('../models/Message');
-const { emitToConversation, emitToUserId } = require('./realtimeGateway');
+const { emitToConversation, emitToUserId } = require('../services/realtimeGateway');
 const { sendPushToUser } = require('./pushNotificationService');
+const { stringifyPushData } = require('./patientNotifyService');
 const { patientPhotoPathFromPopulated } = require('./utilsService');
 const { decrypt } = require('./cryptoService');
 const MOIS_FR_RDV = [
@@ -28,21 +29,19 @@ async function notifyPatientRdv(patientId, title, body, data = {}) {
   const pid = String(patientId || '').trim();
   if (!pid) return;
   try {
-    emitToUserId(pid, 'patient:rdv_notification', {
+    const socketPayload = {
       title: String(title || ''),
       body: String(body || ''),
-    });
-    const flat = { type: 'rdv_update' };
-    for (const [k, v] of Object.entries(data || {})) {
-      flat[String(k)] = String(v ?? '');
-    }
+      ...data,
+    };
+    emitToUserId(pid, 'patient:rdv_notification', socketPayload);
     await sendPushToUser({
       userId: pid,
       role: 'patient',
       appName: 'patient',
       title: String(title || 'Télémedecine'),
       body: String(body || ''),
-      data: flat,
+      data: stringifyPushData({ ...data, openChat: true }, 'rdv_update'),
     });
   } catch (e) {
     console.error('[RDV notify]', e);
@@ -53,7 +52,9 @@ async function notifyAndMessagePatientRdvProgramme(opts) {
   const {
     conversationId,
     patientId,
+    doctorId,
     rendezvousId,
+    scheduledAt,
     dateYmd,
     heureHHmm,
     kind,
@@ -90,6 +91,9 @@ async function notifyAndMessagePatientRdvProgramme(opts) {
   await notifyPatientRdv(patientId, pushTitle, content, {
     rendezvousId: String(rendezvousId),
     kind: kind === 'reprogramme' ? 'reprogramme' : 'programme',
+    conversationId: String(conversationId || ''),
+    doctorId: doctorId ? String(doctorId) : '',
+    scheduledAt: scheduledAt ? String(scheduledAt) : '',
   });
   return msg;
 }

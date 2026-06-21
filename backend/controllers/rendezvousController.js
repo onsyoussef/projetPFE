@@ -178,7 +178,9 @@ async function createRendezVous(req, res) {
     await notifyAndMessagePatientRdvProgramme({
       conversationId: String(conv._id),
       patientId,
+      doctorId: medecinId,
       rendezvousId: String(rv._id),
+      scheduledAt: start.toISOString(),
       dateYmd: date,
       heureHHmm: heureNorm,
       kind: 'programme',
@@ -238,7 +240,9 @@ async function updateRendezVous(req, res) {
       await notifyAndMessagePatientRdvProgramme({
         conversationId: String(convPut._id),
         patientId: String(existing.patientId),
+        doctorId: medecinId,
         rendezvousId: String(id),
+        scheduledAt: start.toISOString(),
         dateYmd: d,
         heureHHmm: h,
         kind: 'reprogramme',
@@ -247,6 +251,8 @@ async function updateRendezVous(req, res) {
       await notifyPatientRdv(String(existing.patientId), 'Rendez-vous modifié', phraseRdvTeleconsultReprogramme(d, h), {
         rendezvousId: String(id),
         kind: 'reprogramme',
+        doctorId: medecinId,
+        scheduledAt: start.toISOString(),
       });
     }
     return res.json({ success: true, rendezvous: formatRdvJson(updated, updated.patientId, updated.medecinId) });
