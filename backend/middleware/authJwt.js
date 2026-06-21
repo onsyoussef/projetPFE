@@ -43,6 +43,8 @@ const authLoginLimiter = rateLimit({
   legacyHeaders: false,
   message: { message: 'Trop de tentatives. Réessayez dans 15 minutes.' },
   skip: (req) => req.method === 'OPTIONS',
+  // Render / reverse proxy : évite ValidationError → 500 « Erreur serveur inattendue »
+  validate: { trustProxy: true },
 });
 
 module.exports = {

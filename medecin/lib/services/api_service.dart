@@ -55,9 +55,7 @@ const List<String> kSpecialties = [
 class ApiService {
   static const String _apiBaseUrlFromEnv =
       String.fromEnvironment('API_BASE_URL', defaultValue: '');
-  static const String _defaultWebBaseUrl = 'http://localhost:3000';
-  static const String _defaultMobileBaseUrl =
-      'https://telemedecine-99yr.onrender.com';
+  static const String _defaultBaseUrl = 'https://projetpfe-8vrx.onrender.com';
 
   static String get _baseUrl {
     final configured = _apiBaseUrlFromEnv.trim();
@@ -70,7 +68,7 @@ class ApiService {
       return true;
     }());
     if (configured.isNotEmpty) return configured;
-    return kIsWeb ? _defaultWebBaseUrl : _defaultMobileBaseUrl;
+    return _defaultBaseUrl;
   }
 
   static String get baseUrl => _baseUrl;
