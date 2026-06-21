@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_service.dart';
@@ -14,6 +15,26 @@ class PatientReplyNotificationService {
 
   Timer? _timer;
   bool _tickInFlight = false;
+  bool _paused = false;
+
+  Duration _interval = const Duration(seconds: 3);
+  bool Function()? _notificationsEnabled;
+  void Function(
+    String doctorName,
+    String doctorId,
+    String conversationId, {
+    String? doctorPhotoPath,
+  })? _onDoctorReplyByMessage;
+  void Function(
+    String doctorName,
+    String doctorId,
+    String conversationId,
+    String scheduledAtIso, {
+    String? doctorPhotoPath,
+  })? _onTeleconsultScheduled;
+
+  /// Pendant [ChatPage], le polling HTTP est inutile (socket + messages locaux).
+  static bool pausePolling = false;
 
   /// Conversation ouverte actuellement dans [ChatPage] : pas d’alerte doublon espace patient.
   static String? suppressedConversationId;
@@ -127,6 +148,7 @@ class PatientReplyNotificationService {
       String? doctorPhotoPath,
     })? onTeleconsultScheduled,
   }) async {
+    if (_paused || pausePolling) return;
     if (_tickInFlight) return;
     _tickInFlight = true;
     try {
@@ -272,10 +294,66 @@ class PatientReplyNotificationService {
         }
       }
     } catch (e, st) {
-      debugPrint('PatientReplyNotificationService: $e\n$st');
+      if (_isTransientNetworkError(e)) {
+        if (kDebugMode) {
+          debugPrint(
+            '[PatientReplyNotification] API indisponible — poll ignoré '
+            '(${ApiService.baseUrl})',
+          );
+        }
+      } else {
+        debugPrint('PatientReplyNotificationService: $e');
+        if (kDebugMode) debugPrint('$st');
+      }
     } finally {
       _tickInFlight = false;
     }
+  }
+
+  static bool _isTransientNetworkError(Object e) {
+    if (e is http.ClientException) return true;
+    final s = e.toString().toLowerCase();
+    return s.contains('failed to fetch') ||
+        s.contains('connection refused') ||
+        s.contains('socketexception') ||
+        s.contains('network is unreachable') ||
+        s.contains('timed out');
+  }
+
+  void _scheduleTimer() {
+    _timer?.cancel();
+    final onReply = _onDoctorReplyByMessage;
+    final enabled = _notificationsEnabled;
+    if (_paused || onReply == null || enabled == null) return;
+    _timer = Timer.periodic(_interval, (_) {
+      pollOnce(
+        notificationsEnabled: enabled(),
+        onDoctorReplyByMessage: onReply,
+        onTeleconsultScheduled: _onTeleconsultScheduled,
+      );
+    });
+  }
+
+  void pause() {
+    _paused = true;
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  void resume() {
+    if (!_paused) return;
+    _paused = false;
+    _scheduleTimer();
+    final onReply = _onDoctorReplyByMessage;
+    final enabled = _notificationsEnabled;
+    if (onReply == null || enabled == null) return;
+    unawaited(
+      pollOnce(
+        notificationsEnabled: enabled(),
+        onDoctorReplyByMessage: onReply,
+        onTeleconsultScheduled: _onTeleconsultScheduled,
+      ),
+    );
   }
 
   void start({
@@ -295,14 +373,13 @@ class PatientReplyNotificationService {
       String? doctorPhotoPath,
     })? onTeleconsultScheduled,
   }) {
-    stop();
-    _timer = Timer.periodic(interval, (_) {
-      pollOnce(
-        notificationsEnabled: notificationsEnabled(),
-        onDoctorReplyByMessage: onDoctorReplyByMessage,
-        onTeleconsultScheduled: onTeleconsultScheduled,
-      );
-    });
+    stop(resumeAfter: false);
+    _paused = false;
+    _interval = interval;
+    _notificationsEnabled = notificationsEnabled;
+    _onDoctorReplyByMessage = onDoctorReplyByMessage;
+    _onTeleconsultScheduled = onTeleconsultScheduled;
+    _scheduleTimer();
     Future<void>(() async {
       await pollOnce(
         notificationsEnabled: notificationsEnabled(),
@@ -312,9 +389,15 @@ class PatientReplyNotificationService {
     });
   }
 
-  void stop() {
+  void stop({bool resumeAfter = false}) {
     _timer?.cancel();
     _timer = null;
+    if (!resumeAfter) {
+      _paused = false;
+      _notificationsEnabled = null;
+      _onDoctorReplyByMessage = null;
+      _onTeleconsultScheduled = null;
+    }
   }
 
   void dispose() => stop();

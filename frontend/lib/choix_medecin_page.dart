@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -65,6 +67,30 @@ class _ChoixMedecinPageState extends State<ChoixMedecinPage> {
   String? _locationError;
 
   int _searchRequestId = 0;
+  Timer? _searchDebounce;
+  static const Duration _searchDebounceDuration = Duration(milliseconds: 400);
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController.addListener(_onSearchInputChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scheduleSearch(immediate: true);
+    });
+  }
+
+  void _onSearchInputChanged() {
+    _scheduleSearch();
+  }
+
+  void _scheduleSearch({bool immediate = false}) {
+    _searchDebounce?.cancel();
+    if (immediate) {
+      _search();
+      return;
+    }
+    _searchDebounce = Timer(_searchDebounceDuration, _search);
+  }
 
   Future<void> _useMyLocation() async {
     setState(() {
@@ -105,6 +131,7 @@ class _ChoixMedecinPageState extends State<ChoixMedecinPage> {
           _locationLoading = false;
           _locationError = null;
         });
+        _scheduleSearch(immediate: true);
       }
     } catch (e) {
       if (mounted) {
@@ -118,6 +145,8 @@ class _ChoixMedecinPageState extends State<ChoixMedecinPage> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
+    _nameController.removeListener(_onSearchInputChanged);
     _nameController.dispose();
     super.dispose();
   }
@@ -320,15 +349,8 @@ class _ChoixMedecinPageState extends State<ChoixMedecinPage> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           _buildFilters(),
-                          const SizedBox(height: 20),
-                          _GradientSearchButton(
-                            loading: _loading,
-                            onPressed: _loading ? null : _search,
-                          ),
-                          if (_hasSearched) ...[
-                            const SizedBox(height: 24),
-                            _buildResultsSection(),
-                          ],
+                          const SizedBox(height: 24),
+                          _buildResultsSection(),
                         ],
                       ),
                     ),
@@ -387,7 +409,7 @@ class _ChoixMedecinPageState extends State<ChoixMedecinPage> {
               hintText: 'Rechercher par nom',
             ),
             enabled: _allowName,
-            onFieldSubmitted: (_) => _search(),
+            onFieldSubmitted: (_) => _scheduleSearch(immediate: true),
           ),
           const SizedBox(height: 18),
           if (_allowSpecialty) ...[
@@ -417,7 +439,10 @@ class _ChoixMedecinPageState extends State<ChoixMedecinPage> {
                 ...kSpecialties.map((s) => DropdownMenuItem(value: s, child: Text(s))),
               ],
               onChanged: _allowSpecialty
-                  ? (v) => setState(() => _specialty = v)
+                  ? (v) {
+                      setState(() => _specialty = v);
+                      _scheduleSearch(immediate: true);
+                    }
                   : null,
             ),
             const SizedBox(height: 18),
@@ -446,7 +471,10 @@ class _ChoixMedecinPageState extends State<ChoixMedecinPage> {
                   (g) => DropdownMenuItem(value: g, child: Text(g)),
                 ),
               ],
-              onChanged: (v) => setState(() => _governorate = v),
+              onChanged: (v) {
+                setState(() => _governorate = v);
+                _scheduleSearch(immediate: true);
+              },
             ),
             const SizedBox(height: 22),
           ],
@@ -547,6 +575,15 @@ class _ChoixMedecinPageState extends State<ChoixMedecinPage> {
   }
 
   Widget _buildResultsSection() {
+    if (_loading && !_hasSearched) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 48),
+          child: CircularProgressIndicator(color: _titleNavy),
+        ),
+      );
+    }
+
     if (_searchError != null) {
       return Container(
         padding: const EdgeInsets.all(20),
@@ -581,7 +618,9 @@ class _ChoixMedecinPageState extends State<ChoixMedecinPage> {
           children: [
             Expanded(
               child: Text(
-                '$count résultat${count > 1 ? 's' : ''} trouvé${count > 1 ? 's' : ''}',
+                _loading
+                    ? 'Recherche en cours…'
+                    : '$count résultat${count > 1 ? 's' : ''} trouvé${count > 1 ? 's' : ''}',
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w800,
                       color: _titleNavy,
@@ -676,84 +715,6 @@ class _ChoixMedecinPageState extends State<ChoixMedecinPage> {
             ),
           ),
       ],
-    );
-  }
-}
-
-class _GradientSearchButton extends StatelessWidget {
-  const _GradientSearchButton({
-    required this.onPressed,
-    this.loading = false,
-  });
-
-  final VoidCallback? onPressed;
-  final bool loading;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(999),
-        gradient: onPressed == null
-            ? null
-            : const LinearGradient(
-                colors: [
-                  Color(0xFFE8719A),
-                  Color(0xFF3B5998),
-                ],
-              ),
-        color: onPressed == null ? const Color(0xFFE5E7EB) : null,
-        boxShadow: onPressed == null
-            ? null
-            : [
-                BoxShadow(
-                  color: const Color(0xFF3B5998).withValues(alpha: 0.28),
-                  blurRadius: 18,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius: BorderRadius.circular(999),
-          child: SizedBox(
-            width: double.infinity,
-            height: HeadsAppMetrics.buttonHeight,
-            child: Center(
-              child: loading
-                  ? const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        color: Colors.white,
-                      ),
-                    )
-                  : Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Rechercher',
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 16,
-                              ),
-                        ),
-                        const SizedBox(width: 8),
-                        const Icon(
-                          Icons.arrow_forward_rounded,
-                          color: Colors.white,
-                          size: 22,
-                        ),
-                      ],
-                    ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

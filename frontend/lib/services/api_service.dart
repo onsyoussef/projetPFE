@@ -433,7 +433,7 @@ class ApiService {
     final uri = Uri.parse('$_baseUrl/formulaire-urgence');
     final response = await http.post(
       uri,
-      headers: {'Content-Type': 'application/json'},
+      headers: _jsonHeadersWithAuth(),
       body: jsonEncode({
         'patientId': patientId,
         'symptomes': symptomes,
@@ -441,11 +441,16 @@ class ApiService {
       }),
     );
 
-    final data = jsonDecode(response.body);
+    final data = _decodeBody(response.body);
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return data;
     } else {
-      throw Exception(data['message'] ?? 'Erreur lors de l\'enregistrement.');
+      throw Exception(
+        _extractErrorMessage(
+          response,
+          fallback: 'Erreur lors de l\'enregistrement.',
+        ),
+      );
     }
   }
 
@@ -514,7 +519,9 @@ class ApiService {
     required String patientId,
   }) async {
     final uri = Uri.parse('$_baseUrl/patient/conversations?patientId=${Uri.encodeComponent(patientId)}');
-    final response = await http.get(uri, headers: _headersAuthOnly());
+    final response = await http
+        .get(uri, headers: _headersAuthOnly())
+        .timeout(const Duration(seconds: 12));
     final data = jsonDecode(response.body);
     if (response.statusCode >= 200 && response.statusCode < 300) {
       final list = data['conversations'];
@@ -1321,7 +1328,7 @@ class ApiService {
       if (item is Map) return Map<String, dynamic>.from(item);
       return null;
     }
-    throw Exception((data as Map<String, dynamic>)['message'] ?? 'Erreur mesure temps réel');
+    throw Exception((data as Map<String, dynamic>)['message'] ?? 'Erreur lors du chargement de la mesure');
   }
 
   static Future<List<Map<String, dynamic>>> getPatientBloodPressureHistory({
@@ -1366,8 +1373,9 @@ class ApiService {
     required String patientId,
     required int systolic,
     required int diastolic,
+    int? meanArterialPressure,
     int? heartRate,
-    String source = 'ble_esp32',
+    String source = 'manual',
     String? deviceName,
     DateTime? measuredAt,
   }) async {
@@ -1379,6 +1387,7 @@ class ApiService {
         'patientId': patientId,
         'systolic': systolic,
         'diastolic': diastolic,
+        if (meanArterialPressure != null) 'meanArterialPressure': meanArterialPressure,
         if (heartRate != null) 'heartRate': heartRate,
         'source': source,
         if (deviceName != null && deviceName.isNotEmpty) 'deviceName': deviceName,

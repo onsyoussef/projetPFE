@@ -73,6 +73,6 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>L'application accède à vos photos pour importer des images dans votre dossier médical.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>HeadsApp utilise le Bluetooth pour se connecter à votre tensiomètre.</string>
+	<string>L'application se connecte au tensiomètre HeadsApp-BP-Monitor pour afficher vos mesures tensionnelles.</string>
 </dict>
 </plist>

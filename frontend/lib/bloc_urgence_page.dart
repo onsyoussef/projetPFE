@@ -71,29 +71,10 @@ class _BlocUrgencePageState extends State<BlocUrgencePage> {
       context,
       onContinue: () async {
         Navigator.of(context).pop();
-        await _enregistrerFormulaireSansUrgence();
         if (!mounted) return;
         await _naviguerVersEspace();
       },
     );
-  }
-
-  Future<void> _enregistrerFormulaireSansUrgence() async {
-    if (widget.patientId == null || widget.patientId!.isEmpty || !_aucunSymptome) {
-      return;
-    }
-    try {
-      await ApiService.saveFormulaireUrgence(
-        patientId: widget.patientId!,
-        symptomes: _symptomes
-            .map(EmergencySymptomsCatalog.labelForKey)
-            .toList(),
-        alerteAcceptee: false,
-      );
-    } catch (_) {
-      if (!mounted) return;
-      _showSaveErrorSnackBar();
-    }
   }
 
   Future<void> _montrerAlerte() async {
@@ -148,6 +129,7 @@ class _BlocUrgencePageState extends State<BlocUrgencePage> {
       await ApiService.saveFormulaireUrgence(
         patientId: widget.patientId!,
         symptomes: _symptomes
+            .where((key) => key != EmergencySymptomsCatalog.keyAucun)
             .map(EmergencySymptomsCatalog.labelForKey)
             .toList(),
         alerteAcceptee: true,

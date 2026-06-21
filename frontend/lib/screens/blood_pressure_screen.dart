@@ -5,7 +5,7 @@ import '../headsapp_theme.dart';
 import '../models/blood_pressure_alert.dart';
 import '../models/blood_pressure_measurement.dart';
 import '../providers/blood_pressure_provider.dart';
-import '../utils/patient_ui_utils.dart';
+import '../services/blood_pressure_ble_service.dart';
 
 class BloodPressureScreen extends StatefulWidget {
   const BloodPressureScreen({
@@ -31,43 +31,25 @@ class _BloodPressureScreenState extends State<BloodPressureScreen> {
     _provider.initialize();
   }
 
+  void _handleConnectTap() {
+    if (!_provider.bleSupported) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'La connexion Bluetooth nécessite l’application mobile (Android/iOS) '
+            'ou l’application Windows sur PC.',
+          ),
+        ),
+      );
+      return;
+    }
+    _provider.connectBle();
+  }
+
   @override
   void dispose() {
     _provider.dispose();
     super.dispose();
-  }
-
-  Future<void> _toggleBleConnection() async {
-    if (_provider.bleConnecting) return;
-    try {
-      if (_provider.bleConnected) {
-        await _provider.disconnectBle();
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Tensiomètre déconnecté.'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      } else {
-        await _provider.connectBle();
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Tensiomètre connecté. Les mesures seront synchronisées.'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.toString().replaceFirst('Exception: ', '')),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
   }
 
   @override
@@ -78,37 +60,13 @@ class _BloodPressureScreenState extends State<BloodPressureScreen> {
         return Scaffold(
           backgroundColor: HeadsAppColors.surfaceAlt,
           appBar: AppBar(
-            title: const Text('Tensiomètre connecté'),
+            title: const Text('Suivi tensionnel'),
             actions: [
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: TextButton.icon(
-                  onPressed: _provider.bleConnecting ? null : _toggleBleConnection,
-                  icon: _provider.bleConnecting
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Icon(
-                          _provider.bleConnected
-                              ? Icons.bluetooth_connected_rounded
-                              : Icons.bluetooth_rounded,
-                          size: 20,
-                        ),
-                  label: Text(
-                    _provider.bleConnecting
-                        ? 'Connexion…'
-                        : (_provider.bleConnected ? 'Connecté' : 'Se connecter'),
-                  ),
-                  style: TextButton.styleFrom(
-                    foregroundColor: _provider.bleConnected
-                        ? HeadsAppColors.success
-                        : HeadsAppColors.brandPrimary,
-                    textStyle: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ),
+              _AppBarConnectAction(
+                provider: _provider,
+                onConnect: _handleConnectTap,
               ),
+              const SizedBox(width: 8),
             ],
           ),
           body: _provider.loading
@@ -123,33 +81,19 @@ class _BloodPressureScreenState extends State<BloodPressureScreen> {
                   child: ListView(
                     padding: const EdgeInsets.all(HeadsAppMetrics.pagePadding),
                     children: [
-                      _HubHeader(
-                        patientName: widget.patientName,
-                        bleConnected: _provider.bleConnected,
-                        bleStatusMessage: _provider.bleStatusMessage,
-                      ),
-                      const SizedBox(height: 14),
-                      if (!_provider.bleConnected)
-                        _BleHintCard(connecting: _provider.bleConnecting)
-                      else ...[
-                        _InteractiveHubCard(
-                          title: 'Mesure en temps réel',
-                          subtitle:
-                              'Consulter PAS/PAD/FC et l\'interprétation instantanée',
-                          icon: Icons.monitor_heart_rounded,
-                          accent: HeadsAppColors.brandPrimary,
-                          badgeText: 'Connecté',
-                          badgeColor: HeadsAppColors.success,
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) =>
-                                    _BloodPressureLivePage(provider: _provider),
-                              ),
-                            );
-                          },
+                      if (_provider.bleConnected) ...[
+                        _RealTimeMeasurementsCard(provider: _provider),
+                        const SizedBox(height: 14),
+                      ],
+                      if (_provider.bleError != null) ...[
+                        Text(
+                          _provider.bleError!,
+                          style: const TextStyle(
+                            color: HeadsAppColors.warning,
+                            fontSize: 12,
+                          ),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 14),
                       ],
                       _InteractiveHubCard(
                         title: 'Historique',
@@ -197,19 +141,111 @@ class _BloodPressureScreenState extends State<BloodPressureScreen> {
   }
 }
 
-class _HubHeader extends StatelessWidget {
-  const _HubHeader({
-    required this.patientName,
-    required this.bleConnected,
-    this.bleStatusMessage,
+class _AppBarConnectAction extends StatelessWidget {
+  const _AppBarConnectAction({
+    required this.provider,
+    required this.onConnect,
   });
 
-  final String patientName;
-  final bool bleConnected;
-  final String? bleStatusMessage;
+  final BloodPressureProvider provider;
+  final VoidCallback onConnect;
 
   @override
   Widget build(BuildContext context) {
+    if (provider.bleConnecting) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 12),
+        child: SizedBox(
+          width: 22,
+          height: 22,
+          child: CircularProgressIndicator(
+            strokeWidth: 2.5,
+            color: HeadsAppColors.brandPrimary,
+          ),
+        ),
+      );
+    }
+
+    if (provider.bleConnected) {
+      return _CompactHeaderButton(
+        label: 'Déconnecter',
+        icon: Icons.bluetooth_connected_rounded,
+        foregroundColor: const Color(0xFF16A34A),
+        backgroundColor: const Color(0xFFDCFCE7),
+        onPressed: provider.disconnectBle,
+      );
+    }
+
+    return _CompactHeaderButton(
+      label: 'Se connecter',
+      icon: Icons.bluetooth_rounded,
+      foregroundColor: Colors.white,
+      backgroundColor: HeadsAppColors.brandPrimary,
+      onPressed: onConnect,
+    );
+  }
+}
+
+class _CompactHeaderButton extends StatelessWidget {
+  const _CompactHeaderButton({
+    required this.label,
+    required this.icon,
+    required this.foregroundColor,
+    required this.backgroundColor,
+    required this.onPressed,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color foregroundColor;
+  final Color backgroundColor;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Material(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(20),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onPressed,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 18, color: foregroundColor),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: foregroundColor,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RealTimeMeasurementsCard extends StatelessWidget {
+  const _RealTimeMeasurementsCard({required this.provider});
+
+  final BloodPressureProvider provider;
+
+  @override
+  Widget build(BuildContext context) {
+    final dateFmt = DateFormat('dd/MM/yyyy');
+    final timeFmt = DateFormat('HH:mm');
+    final measurement = provider.displayMeasurement;
+
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -227,95 +263,72 @@ class _HubHeader extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Suivi tensionnel',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: HeadsAppColors.textPrimary,
-                ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            readablePatientName(patientName).isEmpty
-                ? 'Patient'
-                : readablePatientName(patientName),
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
-          const SizedBox(height: 12),
           Row(
             children: [
-              Icon(
-                bleConnected
-                    ? Icons.bluetooth_connected_rounded
-                    : Icons.bluetooth_disabled_rounded,
-                size: 18,
-                color: bleConnected
-                    ? HeadsAppColors.success
-                    : HeadsAppColors.textTertiary,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
+              const Expanded(
                 child: Text(
-                  bleStatusMessage ??
-                      (bleConnected
-                          ? 'Tensiomètre connecté via Bluetooth'
-                          : 'Appuyez sur « Se connecter » pour lier le tensiomètre'),
+                  'Les mesures en temps réel',
                   style: TextStyle(
-                    color: bleConnected
-                        ? HeadsAppColors.success
-                        : HeadsAppColors.textSecondary,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                    color: HeadsAppColors.textPrimary,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFDCFCE7),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: const Text(
+                  'LIVE',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF16A34A),
                   ),
                 ),
               ),
             ],
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BleHintCard extends StatelessWidget {
-  const _BleHintCard({required this.connecting});
-
-  final bool connecting;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: HeadsAppColors.brandHighlight,
-        borderRadius: BorderRadius.circular(HeadsAppMetrics.compactRadius),
-        border: Border.all(
-          color: HeadsAppColors.brandPrimary.withValues(alpha: 0.2),
-        ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            connecting ? Icons.hourglass_top_rounded : Icons.info_outline_rounded,
-            color: HeadsAppColors.brandPrimary,
-            size: 22,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              connecting
-                  ? 'Connexion Bluetooth en cours avec le tensiomètre ESP32…'
-                  : 'La carte « Mesure en temps réel » apparaîtra après connexion Bluetooth via le bouton « Se connecter » en haut à droite.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: HeadsAppColors.textSecondary,
-                    height: 1.45,
-                  ),
+          const SizedBox(height: 6),
+          Text(
+            '${BloodPressureBleService.deviceName} connecté',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF16A34A),
             ),
           ),
+          const SizedBox(height: 14),
+          if (measurement == null)
+            const _EmptyLine(
+              text: 'En attente d\'une mesure du tensiomètre…',
+            )
+          else ...[
+            Row(
+              children: [
+                _MetricPill(label: 'PAS', value: '${measurement.systolic}'),
+                const SizedBox(width: 8),
+                _MetricPill(label: 'PAD', value: '${measurement.diastolic}'),
+                const SizedBox(width: 8),
+                _MetricPill(
+                  label: 'PAM',
+                  value: measurement.meanArterialPressure == null
+                      ? '--'
+                      : '${measurement.meanArterialPressure}',
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Reçu à ${timeFmt.format(measurement.measuredAt)} — ${dateFmt.format(measurement.measuredAt)}',
+              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+            ),
+            const SizedBox(height: 12),
+            _StatusCard(status: provider.status),
+          ],
         ],
       ),
     );
@@ -430,43 +443,6 @@ class _InteractiveHubCardState extends State<_InteractiveHubCard> {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _BloodPressureLivePage extends StatelessWidget {
-  const _BloodPressureLivePage({required this.provider});
-
-  final BloodPressureProvider provider;
-
-  @override
-  Widget build(BuildContext context) {
-    final dateFmt = DateFormat('dd/MM/yyyy');
-    final timeFmt = DateFormat('HH:mm');
-    return AnimatedBuilder(
-      animation: provider,
-      builder: (context, _) {
-        final latest = provider.latest;
-        return Scaffold(
-          backgroundColor: HeadsAppColors.surfaceAlt,
-          appBar: AppBar(title: const Text('Mesure en temps réel')),
-          body: RefreshIndicator(
-            onRefresh: provider.refresh,
-            child: ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                if (latest == null)
-                  const _EmptyLine(text: 'Aucune donnée temps réel disponible.')
-                else ...[
-                  _LiveReadingCard(latest: latest, dateFmt: dateFmt, timeFmt: timeFmt),
-                  const SizedBox(height: 12),
-                  _StatusCard(status: provider.status),
-                ],
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 }
@@ -869,56 +845,6 @@ class _EmptyLine extends StatelessWidget {
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Text(text),
-    );
-  }
-}
-
-class _LiveReadingCard extends StatelessWidget {
-  const _LiveReadingCard({
-    required this.latest,
-    required this.dateFmt,
-    required this.timeFmt,
-  });
-
-  final BloodPressureMeasurement latest;
-  final DateFormat dateFmt;
-  final DateFormat timeFmt;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 1.5,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Mesure en temps réel',
-              style: TextStyle(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                _MetricPill(label: 'PAS', value: '${latest.systolic}'),
-                const SizedBox(width: 8),
-                _MetricPill(label: 'PAD', value: '${latest.diastolic}'),
-                const SizedBox(width: 8),
-                _MetricPill(
-                  label: 'FC',
-                  value: latest.heartRate == null ? '--' : '${latest.heartRate}',
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Dernière mesure: ${dateFmt.format(latest.measuredAt)} à ${timeFmt.format(latest.measuredAt)}',
-              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

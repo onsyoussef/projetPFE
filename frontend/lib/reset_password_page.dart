@@ -69,10 +69,7 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
         children: [
           const SizedBox(height: 16),
           Center(
-            child: AuthBrandHeader(
-              icon: Icons.lock_reset_rounded,
-              iconBackgroundColor: HeadsAppColors.brandPrimary,
-            ),
+            child: AuthBrandHeader(useLogoAsset: true, vertical: true),
           ),
           const SizedBox(height: 12),
           Text(
@@ -89,7 +86,7 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  'Saisissez votre email pour recevoir un lien de réinitialisation. Nous vous accompagnerons pas à pas pour sécuriser votre compte.',
+                  'Saisissez votre email pour recevoir un code de réinitialisation. Nous vous accompagnerons pas à pas pour sécuriser votre compte.',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: HeadsAppColors.textSecondary,
                         height: 1.5,
@@ -110,7 +107,7 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
                 ),
                 const SizedBox(height: 24),
                 AuthGradientButton(
-                  label: 'Envoyer le lien',
+                  label: 'Envoyer le code',
                   loading: _sendingCode,
                   onPressed: _sendingCode ? null : _onSendCode,
                 ),

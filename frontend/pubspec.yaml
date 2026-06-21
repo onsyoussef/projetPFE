@@ -39,7 +39,6 @@ dependencies:
   http: ^1.6.0
   geolocator: ^13.0.2
   permission_handler: ^11.3.1
-  flutter_blue_plus: ^1.35.5
   file_picker: ^8.0.0
   record: ^5.0.0
   path_provider: ^2.1.0
@@ -63,6 +62,8 @@ dependencies:
   provider: ^6.1.5+1
   shimmer: ^3.0.0
   flutter_secure_storage: ^10.0.0
+  flutter_blue_plus: ^2.3.9
+  flutter_blue_plus_winrt: ^0.0.20
 
 dev_dependencies:
   flutter_test:

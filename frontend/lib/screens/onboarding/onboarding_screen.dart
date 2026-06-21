@@ -288,8 +288,8 @@ class _OnboardingChatOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 118,
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 22),
+      width: 220,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.88),
         borderRadius: BorderRadius.circular(18),
@@ -301,28 +301,9 @@ class _OnboardingChatOverlay extends StatelessWidget {
           ),
         ],
       ),
-      child: Column(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 54,
-            height: 7,
-            decoration: BoxDecoration(
-              color: const Color(0xFFDCE7F5),
-              borderRadius: BorderRadius.circular(999),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Container(
-            width: 38,
-            height: 7,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE8EEF5),
-              borderRadius: BorderRadius.circular(999),
-            ),
-          ),
-          const SizedBox(height: 22),
           Container(
             width: 46,
             height: 46,
@@ -334,6 +315,32 @@ class _OnboardingChatOverlay extends StatelessWidget {
               Icons.chat_bubble_outline_rounded,
               color: Colors.white,
               size: 22,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 72,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFDCE7F5),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  width: 110,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE8EEF5),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ],
             ),
           ),
         ],

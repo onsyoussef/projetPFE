@@ -2,12 +2,14 @@ class BloodPressureMeasurement {
   BloodPressureMeasurement({
     required this.systolic,
     required this.diastolic,
+    this.meanArterialPressure,
     this.heartRate,
     required this.measuredAt,
   });
 
   final int systolic;
   final int diastolic;
+  final int? meanArterialPressure;
   final int? heartRate;
   final DateTime measuredAt;
 
@@ -30,9 +32,17 @@ class BloodPressureMeasurement {
       if (hr <= 0) hr = null;
     }
 
+    final mapRaw = json['meanArterialPressure'] ?? json['pam'] ?? json['map'];
+    int? map;
+    if (mapRaw != null) {
+      map = parseInt(mapRaw, 0);
+      if (map <= 0) map = null;
+    }
+
     return BloodPressureMeasurement(
       systolic: parseInt(json['systolic'], 0),
       diastolic: parseInt(json['diastolic'], 0),
+      meanArterialPressure: map,
       heartRate: hr,
       measuredAt: parseDate(json['measuredAt']),
     );

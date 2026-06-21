@@ -241,6 +241,21 @@ class PushNotificationService {
       await PendingCallIntent.persist();
       await PushNotificationService.syncIncomingCallForRealtime(data);
       _pushChatOpener();
+      return;
+    }
+    if (type == 'teleconsult_request_decision' ||
+        type == 'teleconsult_form_decision' ||
+        type == 'rdv_update') {
+      final doctorId = data['doctorId'] ?? '';
+      if (doctorId.isNotEmpty && data['openChat'] != 'false') {
+        PendingMissedCallIntent.setFromPayload({
+          'doctorId': doctorId,
+          'doctorName': data['doctorName'] ?? '',
+          'conversationId': data['conversationId'] ?? '',
+        });
+        await PendingMissedCallIntent.persist();
+        _pushChatOpener();
+      }
     }
   }
 

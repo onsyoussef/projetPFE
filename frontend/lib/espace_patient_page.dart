@@ -50,6 +50,8 @@ class _EspacePatientPageState extends State<EspacePatientPage> with WidgetsBindi
   Timer? _teleconsultReminderTimer;
   final Set<String> _remindedTeleconsultKeys = <String>{};
   StreamSubscription<Map<String, dynamic>>? _teleconsultReqDecisionSub;
+  StreamSubscription<Map<String, dynamic>>? _teleconsultFormDecisionSub;
+  StreamSubscription<Map<String, dynamic>>? _patientRdvNotifSub;
   StreamSubscription<Map<String, dynamic>>? _patientChatSessionReopenedSub;
   StreamSubscription<Map<String, dynamic>>? _inboxNewMsgSub;
 
@@ -88,7 +90,11 @@ class _EspacePatientPageState extends State<EspacePatientPage> with WidgetsBindi
       jwtToken: ApiService.jwtToken,
     );
     _teleconsultReqDecisionSub = WebRtcService.instance.teleconsultRequestDecisions
-        .listen(_onTeleconsultRequestDecisionEvent);
+        .listen((p) => _onTeleconsultDecisionEvent(p, isForm: false));
+    _teleconsultFormDecisionSub = WebRtcService.instance.teleconsultFormDecisions
+        .listen((p) => _onTeleconsultDecisionEvent(p, isForm: true));
+    _patientRdvNotifSub = WebRtcService.instance.patientRdvNotifications
+        .listen(_onPatientRdvNotificationEvent);
     _patientChatSessionReopenedSub = WebRtcService.instance
         .patientChatSessionReopenedEvents
         .listen(_onPatientChatSessionReopened);
@@ -114,6 +120,8 @@ class _EspacePatientPageState extends State<EspacePatientPage> with WidgetsBindi
     WidgetsBinding.instance.removeObserver(this);
     _teleconsultReminderTimer?.cancel();
     _teleconsultReqDecisionSub?.cancel();
+    _teleconsultFormDecisionSub?.cancel();
+    _patientRdvNotifSub?.cancel();
     _patientChatSessionReopenedSub?.cancel();
     _inboxNewMsgSub?.cancel();
     _replyNotifService.dispose();
@@ -242,14 +250,14 @@ class _EspacePatientPageState extends State<EspacePatientPage> with WidgetsBindi
     );
   }
 
-  void _onTeleconsultRequestDecisionEvent(Map<String, dynamic> p) {
-    if (!mounted) return;
+  void _onTeleconsultDecisionEvent(Map<String, dynamic> p, {required bool isForm}) {
+    if (!mounted || !_notificationsEnabled) return;
     final cid = p['conversationId']?.toString() ?? '';
     final status = p['status']?.toString() ?? '';
     final joined = WebRtcService.instance.joinedConversationId ?? '';
-    final requestId = p['requestId']?.toString() ?? '';
+    final requestId = isForm ? '' : (p['requestId']?.toString() ?? '');
+    final formId = isForm ? (p['formId']?.toString() ?? '') : '';
 
-    // Acceptation alors que le chat est ouvert : la carte « Remplir formulaire » suffit.
     if (status == 'accepted' && cid.isNotEmpty && cid == joined) {
       return;
     }
@@ -262,8 +270,11 @@ class _EspacePatientPageState extends State<EspacePatientPage> with WidgetsBindi
     final doctorPhotoPath = p['doctorPhotoPath']?.toString();
 
     setState(() {
-      final exists = requestId.isNotEmpty &&
-          _pendingDoctorReplies.any((e) => e.requestId == requestId);
+      final exists = isForm
+          ? formId.isNotEmpty &&
+              _pendingDoctorReplies.any((e) => e.formId == formId)
+          : requestId.isNotEmpty &&
+              _pendingDoctorReplies.any((e) => e.requestId == requestId);
       if (!exists) {
         _pendingDoctorReplies.add(
           _PendingDoctorReply(
@@ -272,6 +283,7 @@ class _EspacePatientPageState extends State<EspacePatientPage> with WidgetsBindi
             doctorName: doctorName,
             doctorPhotoPath: doctorPhotoPath,
             requestId: requestId.isNotEmpty ? requestId : null,
+            formId: formId.isNotEmpty ? formId : null,
             teleconsultDecisionStatus: status,
             decisionTitle: title,
             decisionBody: body,
@@ -282,6 +294,24 @@ class _EspacePatientPageState extends State<EspacePatientPage> with WidgetsBindi
       }
     });
     _playReplyNotificationSound();
+  }
+
+  void _onPatientRdvNotificationEvent(Map<String, dynamic> p) {
+    if (!mounted || !_notificationsEnabled) return;
+    final cid = p['conversationId']?.toString() ?? '';
+    final doctorId = p['doctorId']?.toString() ?? '';
+    final scheduledAt = p['scheduledAt']?.toString() ?? '';
+    if (cid.isEmpty || scheduledAt.isEmpty) return;
+
+    final joined = WebRtcService.instance.joinedConversationId ?? '';
+    if (cid.isNotEmpty && cid == joined) return;
+
+    _onTeleconsultScheduledOutsideChat(
+      readableDoctorName(p['doctorName']?.toString(), fallback: 'Votre médecin'),
+      doctorId,
+      cid,
+      scheduledAt,
+    );
   }
 
   void _startTeleconsultReminderLoop() {
@@ -458,7 +488,9 @@ class _EspacePatientPageState extends State<EspacePatientPage> with WidgetsBindi
 
   void _dismissTeleconsultDecisionNotification(_PendingDoctorReply item) {
     setState(() {
-      if (item.requestId != null && item.requestId!.isNotEmpty) {
+      if (item.formId != null && item.formId!.isNotEmpty) {
+        _pendingDoctorReplies.removeWhere((e) => e.formId == item.formId);
+      } else if (item.requestId != null && item.requestId!.isNotEmpty) {
         _pendingDoctorReplies.removeWhere((e) => e.requestId == item.requestId);
       } else {
         _pendingDoctorReplies.removeWhere(
@@ -1216,6 +1248,7 @@ class _PendingDoctorReply {
     this.scheduledAtIso,
     this.doctorPhotoPath,
     this.requestId,
+    this.formId,
     this.teleconsultDecisionStatus,
     this.decisionTitle,
     this.decisionBody,
@@ -1230,8 +1263,10 @@ class _PendingDoctorReply {
   /// Non null = notification « date de téléconsultation ».
   final String? scheduledAtIso;
   final String? doctorPhotoPath;
-  /// Déduplication des décisions téléconsult (`patient:teleconsult_request_decision`).
+  /// Déduplication des décisions demande (`patient:teleconsult_request_decision`).
   final String? requestId;
+  /// Déduplication des décisions formulaire (`patient:teleconsult_form_decision`).
+  final String? formId;
   /// `accepted` | `rejected` — décision sur une demande de téléconsultation.
   final String? teleconsultDecisionStatus;
   final String? decisionTitle;
@@ -1241,6 +1276,7 @@ class _PendingDoctorReply {
   bool isNew;
 
   String get notificationId {
+    if (formId != null && formId!.isNotEmpty) return 'form_$formId';
     if (requestId != null && requestId!.isNotEmpty) return requestId!;
     if (scheduledAtIso != null) {
       return '${conversationId}_$scheduledAtIso';

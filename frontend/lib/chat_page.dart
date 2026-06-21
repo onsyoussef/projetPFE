@@ -18,11 +18,13 @@ import 'prescription_history/prescription_history_strings.dart';
 import 'providers/call_provider.dart';
 import 'widgets/heads_form_cta_button.dart';
 import 'widgets/call_log_bubble.dart';
+import 'widgets/chat_session_status_chip.dart';
 import 'widgets/patient_prescription_message_card.dart';
 import 'widgets/teleconsult_sent_dialog.dart';
 import 'widgets/waiting_room_banner.dart';
 import 'widgets/waiting_room_screen.dart';
 import 'utils/chat_attachment_open.dart';
+import 'utils/incoming_call_utils.dart';
 import 'utils/patient_ui_utils.dart';
 import 'services/api_service.dart';
 import 'services/patient_reply_notification_service.dart';
@@ -100,6 +102,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   StreamSubscription<Map<String, dynamic>>? _chatTypingSub;
   StreamSubscription<Map<String, dynamic>>? _chatMessagesReadSub;
   StreamSubscription<Map<String, dynamic>>? _doctorStatusUpdatedSub;
+  StreamSubscription<Map<String, dynamic>>? _incomingCallSub;
   bool _pollInFlight = false;
   bool _sessionCloture = false;
   bool _teleFormStartedLocally = false;
@@ -112,6 +115,18 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   final ScrollController _chatScrollController = ScrollController();
   /// Évite double envoi (double clic / Flutter Web / concurrence avec le polling).
   bool _textSendInFlight = false;
+
+  static const Color _inputPlusBlue = Color(0xFF3B67A1);
+  static const Color _inputActionBlue = Color(0xFF204B9B);
+  static const Color _inputHintGrey = Color(0xFF7A8C9F);
+  static const Color _inputSendBtnBg = Color(0xFFD4DEE8);
+  static const List<BoxShadow> _inputCircleShadow = [
+    BoxShadow(
+      color: Color(0x14000000),
+      blurRadius: 6,
+      offset: Offset(0, 2),
+    ),
+  ];
   // Polling plus doux pour réduire la charge réseau et éviter la latence d'envoi.
   static const Duration _pollInterval = Duration(milliseconds: 700);
   static const Duration _doctorStatusPollInterval = Duration(seconds: 10);
@@ -505,6 +520,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _doctorPhotoPath = widget.doctorPhotoPath;
     _callProvider = CallProvider(webRtcService: WebRtcService.instance);
+    IncomingCallDelegate.chatCallProvider = _callProvider;
+    PatientReplyNotificationService.pausePolling = true;
     _callProvider.addListener(_onCallProviderChanged);
     CallChatContext.register(
       doctorId: widget.doctorId,
@@ -540,7 +557,19 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     _socketConnSub = WebRtcService.instance.socketConnected.listen((_) {
       if (mounted) setState(() {});
     });
-    WebRtcService.instance.connectSocket(selfUserId: widget.patientId);
+    WebRtcService.instance.connectSocket(
+      selfUserId: widget.patientId,
+      jwtToken: ApiService.jwtToken,
+    );
+    _incomingCallSub = WebRtcService.instance.incomingCalls.listen((data) async {
+      if (!mounted || _patientInActiveCall) return;
+      await showPatientIncomingCallScreen(
+        callProvider: _callProvider,
+        data: data,
+        fallbackDoctorName: _doctorDisplayName,
+        fallbackDoctorPhotoPath: _doctorPhotoPath,
+      );
+    });
     _initConversation();
     _loadDoctorStatus();
     _subscribeDoctorStatusUpdates();
@@ -1403,10 +1432,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   bool get _canSendMessages {
     if (_sessionCloture) return false;
-    // Après une demande (`request_teleconsult`), l’acceptation médecin (`accept_request`)
-    // ne débloque pas le chat : le patient doit d’abord envoyer le formulaire
-    // (`form_teleconsult`). Ensuite, échange autorisé si le médecin a réagi
-    // (message, créneau, etc.) — voir boucle ci-dessous.
+    // Échange libre uniquement si le médecin a choisi « Répondre par message »
+    // (événement système reply_by_message) après la dernière demande / formulaire.
     int lastTeleIndex = -1;
     for (var i = 0; i < _messages.length; i++) {
       final m = _messages[i];
@@ -1420,14 +1447,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     if (lastTeleIndex == -1) return false;
 
     for (var j = lastTeleIndex + 1; j < _messages.length; j++) {
-      final m = _messages[j];
-      final fromType = m['fromType'] as String? ?? '';
-      final type = m['type'] as String? ?? '';
-      if (fromType == 'doctor') return true;
-      // Pas de `accept_request` ici : après acceptation, formulaire obligatoire avant message libre.
-      if (type == 'teleconsult_scheduled') return true;
-      if (type == 'rdv_teleconsult_programme') return true;
-      if (_payloadEvent(m) == 'reply_by_message') return true;
+      if (_payloadEvent(_messages[j]) == 'reply_by_message') return true;
     }
     return false;
   }
@@ -1439,7 +1459,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Complétez d’abord le formulaire de téléconsultation si le médecin a accepté votre demande, puis attendez sa réponse pour écrire librement.',
+            'Complétez d’abord le formulaire de téléconsultation si le médecin a accepté votre demande. Vous pourrez écrire lorsque le médecin choisira « Répondre par message ».',
           ),
           behavior: SnackBarBehavior.floating,
         ),
@@ -1486,7 +1506,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Complétez d’abord le formulaire de téléconsultation si le médecin a accepté votre demande, puis attendez sa réponse pour envoyer des pièces jointes.',
+            'Complétez d’abord le formulaire de téléconsultation si le médecin a accepté votre demande. Vous pourrez envoyer des pièces jointes lorsque le médecin choisira « Répondre par message ».',
           ),
           behavior: SnackBarBehavior.floating,
         ),
@@ -1525,7 +1545,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Complétez d’abord le formulaire de téléconsultation si le médecin a accepté votre demande, puis attendez sa réponse pour envoyer des images.',
+            'Complétez d’abord le formulaire de téléconsultation si le médecin a accepté votre demande. Vous pourrez envoyer des images lorsque le médecin choisira « Répondre par message ».',
           ),
           behavior: SnackBarBehavior.floating,
         ),
@@ -1774,7 +1794,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Complétez d’abord le formulaire de téléconsultation si le médecin a accepté votre demande, puis attendez sa réponse pour envoyer un vocal.',
+            'Complétez d’abord le formulaire de téléconsultation si le médecin a accepté votre demande. Vous pourrez envoyer un vocal lorsque le médecin choisira « Répondre par message ».',
           ),
           behavior: SnackBarBehavior.floating,
         ),
@@ -1913,6 +1933,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     _chatMessagesReadSub = null;
     _doctorStatusUpdatedSub?.cancel();
     _doctorStatusUpdatedSub = null;
+    _incomingCallSub?.cancel();
+    _incomingCallSub = null;
+    if (IncomingCallDelegate.chatCallProvider == _callProvider) {
+      IncomingCallDelegate.chatCallProvider = null;
+    }
+    PatientReplyNotificationService.pausePolling = false;
     _typingPauseTimer?.cancel();
     _typingEmitEndTimer?.cancel();
     _chatScrollController.dispose();
@@ -1927,7 +1953,6 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    const skyBlue = Color(0xFF1A458B);
     const chatNavy = Color(0xFF1A458B);
 
     final isDoctorAvailable = _doctorStatus == 'available';
@@ -2093,8 +2118,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                     Positioned.fill(child: _buildChatPatternBackground()),
                     Column(
                   children: [
-                    if (!isDoctorAvailable &&
-                        _doctorAutoReplyEnabled &&
+                    if (_doctorAutoReplyEnabled &&
                         _doctorAbsenceMessage != null)
                       Container(
                         width: double.infinity,
@@ -2158,7 +2182,8 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                                   }
                                   final type = msg['type'] as String? ?? 'text';
                                   if (type == 'form_teleconsult_prompt' ||
-                                      type == 'request_teleconsult_prompt') {
+                                      type == 'request_teleconsult_prompt' ||
+                                      type == 'form_teleconsult') {
                                     return const SizedBox.shrink();
                                   }
 
@@ -2222,14 +2247,14 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                                       text: text,
                                     );
                                   } else if (type == 'chat_closed') {
-                                    inner = _PatientSessionClosedLine(
-                                      text: msg['content'] as String? ??
-                                          '🔒 La session a été clôturée par le médecin.',
+                                    inner = ChatSessionStatusChip(
+                                      msg: msg,
+                                      closed: true,
                                     );
                                   } else if (type == 'chat_reopened') {
-                                    inner = _PatientSessionReopenedLine(
-                                      text: msg['content'] as String? ??
-                                          '🔓 La session a été réouverte par le médecin.',
+                                    inner = ChatSessionStatusChip(
+                                      msg: msg,
+                                      closed: false,
                                     );
                                   } else if (type == 'call_event') {
                                     final p = msg['payload'];
@@ -2250,6 +2275,12 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                                     inner = PatientPrescriptionMessageCard(
                                       msg: msg,
                                       conversationId: _conversationId,
+                                    );
+                                  } else if (type == 'doctor_absence') {
+                                    inner = _InfoBubble(
+                                      icon: Icons.event_busy_rounded,
+                                      iconColor: const Color(0xFFEA580C),
+                                      text: msg['content'] as String? ?? '',
                                     );
                                   } else if (type == 'attachment' || type == 'file') {
                                     final payload = msg['payload'] as Map<String, dynamic>?;
@@ -2295,7 +2326,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                         padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                         child: _buildPostAcceptFillFormCard(),
                       ),
-                    _buildInputBar(skyBlue),
+                    _buildInputBar(),
                   ],
                 ),
                   ],
@@ -2305,7 +2336,37 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   }
 
   Color _sendIconColor() {
-    return const Color(0xFFE1395F);
+    return _inputActionBlue;
+  }
+
+  Widget _buildPatientInputCircleButton({
+    required Widget icon,
+    required VoidCallback? onPressed,
+    Color backgroundColor = Colors.white,
+    List<BoxShadow>? boxShadow,
+    String? tooltip,
+  }) {
+    Widget button = Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onPressed,
+        customBorder: const CircleBorder(),
+        child: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            shape: BoxShape.circle,
+            boxShadow: boxShadow,
+          ),
+          child: Center(child: icon),
+        ),
+      ),
+    );
+    if (tooltip != null && tooltip.isNotEmpty) {
+      button = Tooltip(message: tooltip, child: button);
+    }
+    return button;
   }
 
   Future<void> _onSendPressed() async {
@@ -2496,7 +2557,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildInputBar(Color skyBlue) {
+  Widget _buildInputBar() {
     if (_sessionCloture) {
       return Container(
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
@@ -2594,7 +2655,7 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                 SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Si votre demande est acceptée, complétez d’abord le formulaire de téléconsultation. Vous pourrez écrire au médecin après envoi du formulaire et lorsque la conversation sera ouverte (réponse ou créneau du médecin).',
+                    'Si votre demande est acceptée, complétez d’abord le formulaire de téléconsultation. L’échange de messages sera possible uniquement lorsque le médecin choisira « Répondre par message ».',
                     style: TextStyle(
                       fontSize: 13,
                       height: 1.45,
@@ -2611,236 +2672,237 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
-      color: Colors.white,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_peerTyping)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Le médecin est en train d\'écrire…',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey.shade600,
-                    fontStyle: FontStyle.italic,
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_peerTyping)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6, left: 4),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Le médecin est en train d\'écrire…',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _inputHintGrey,
+                      fontStyle: FontStyle.italic,
+                    ),
                   ),
                 ),
               ),
-            ),
-          const SizedBox(height: 6),
-          if (_pendingAttachmentFile != null)
-            Container(
-              margin: const EdgeInsets.only(bottom: 6),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: skyBlue.withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: skyBlue.withValues(alpha: 0.3)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.attach_file_rounded,
-                      size: 18, color: Color(0xFF4FA8D5)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Fichier prêt: ${_pendingAttachmentFile!.name}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    onPressed: () {
-                      setState(() {
-                        _pendingAttachmentFile = null;
-                      });
-                    },
-                    icon: const Icon(Icons.close_rounded,
-                        size: 18, color: Colors.red),
-                    padding: EdgeInsets.zero,
-                    constraints:
-                        const BoxConstraints(minWidth: 32, minHeight: 32),
-                  ),
-                ],
-              ),
-            ),
-          if (_pendingAttachmentFile != null && _pendingVoiceFile != null)
-            const SizedBox(height: 4),
-          if (_pendingVoiceFile != null)
-            Container(
-              margin: const EdgeInsets.only(bottom: 6),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: skyBlue.withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: skyBlue.withValues(alpha: 0.3)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.mic_rounded,
-                      size: 18, color: Color(0xFF4FA8D5)),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Message vocal prêt à envoyer',
-                    style: TextStyle(fontSize: 13),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    onPressed: () {
-                      setState(() {
-                        _pendingVoiceFile = null;
-                      });
-                    },
-                    icon: const Icon(Icons.close_rounded,
-                        size: 18, color: Colors.red),
-                    padding: EdgeInsets.zero,
-                    constraints:
-                        const BoxConstraints(minWidth: 32, minHeight: 32),
-                  ),
-                ],
-              ),
-            ),
-          if (_pendingVoiceFile != null) const SizedBox(height: 4),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
+            if (_pendingAttachmentFile != null)
               Container(
-                width: 44,
-                height: 44,
-                margin: const EdgeInsets.only(right: 8),
+                margin: const EdgeInsets.only(bottom: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
-                  color: skyBlue.withValues(alpha: 0.16),
-                  shape: BoxShape.circle,
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                child: PopupMenuButton<String>(
-                  tooltip: 'Ajouter une pièce jointe',
-                  enabled: _conversationId != null,
-                  padding: EdgeInsets.zero,
-                  onSelected: (value) {
-                    if (value == 'file') {
-                      _pickFile();
-                    } else if (value == 'image') {
-                      _pickImage();
-                    }
-                  },
-                  itemBuilder: (context) => const [
-                    PopupMenuItem<String>(
-                      value: 'file',
-                      child: ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        leading: Icon(Icons.attach_file_rounded),
-                        title: Text('Fichier'),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.attach_file_rounded,
+                        size: 18, color: _inputPlusBlue),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Fichier prêt: ${_pendingAttachmentFile!.name}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 13),
                       ),
                     ),
-                    PopupMenuItem<String>(
-                      value: 'image',
-                      child: ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        leading: Icon(Icons.photo_library_rounded),
-                        title: Text('Photo'),
-                      ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      onPressed: () {
+                        setState(() {
+                          _pendingAttachmentFile = null;
+                        });
+                      },
+                      icon: const Icon(Icons.close_rounded,
+                          size: 18, color: Colors.red),
+                      padding: EdgeInsets.zero,
+                      constraints:
+                          const BoxConstraints(minWidth: 32, minHeight: 32),
                     ),
                   ],
-                  child: Icon(
-                    Icons.add_rounded,
-                    size: 20,
-                    color: _conversationId == null
-                        ? Colors.grey.shade500
-                        : skyBlue,
-                  ),
                 ),
               ),
-              Expanded(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 52),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: _patientInputSurfaceGreyForReopenAnim
-                          ? Colors.grey.shade200
-                          : HeadsAppColors.surfaceSoft,
-                      borderRadius: BorderRadius.circular(26),
-                      border: Border.all(
-                        color: HeadsAppColors.border,
-                      ),
+            if (_pendingAttachmentFile != null && _pendingVoiceFile != null)
+              const SizedBox(height: 4),
+            if (_pendingVoiceFile != null)
+              Container(
+                margin: const EdgeInsets.only(bottom: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.mic_rounded,
+                        size: 18, color: _inputPlusBlue),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Message vocal prêt à envoyer',
+                      style: TextStyle(fontSize: 13),
                     ),
-                    child: TextField(
-                      controller: _textController,
-                      textInputAction: TextInputAction.send,
-                      onChanged: _onPatientTextChangedTyping,
-                      onSubmitted: (_) => _onSendPressed(),
-                      decoration: const InputDecoration(
-                        hintText: 'Écrire au médecin...',
-                        border: InputBorder.none,
-                        isDense: true,
-                        contentPadding: EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 14,
+                    const SizedBox(width: 8),
+                    IconButton(
+                      onPressed: () {
+                        setState(() {
+                          _pendingVoiceFile = null;
+                        });
+                      },
+                      icon: const Icon(Icons.close_rounded,
+                          size: 18, color: Colors.red),
+                      padding: EdgeInsets.zero,
+                      constraints:
+                          const BoxConstraints(minWidth: 32, minHeight: 32),
+                    ),
+                  ],
+                ),
+              ),
+            if (_pendingVoiceFile != null) const SizedBox(height: 4),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 8, bottom: 2),
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: _inputCircleShadow,
+                    ),
+                    child: PopupMenuButton<String>(
+                      tooltip: 'Ajouter une pièce jointe',
+                      enabled: _conversationId != null,
+                      padding: EdgeInsets.zero,
+                      onSelected: (value) {
+                        if (value == 'file') {
+                          _pickFile();
+                        } else if (value == 'image') {
+                          _pickImage();
+                        }
+                      },
+                      itemBuilder: (context) => const [
+                        PopupMenuItem<String>(
+                          value: 'file',
+                          child: Row(
+                            children: [
+                              Icon(Icons.attach_file_rounded),
+                              SizedBox(width: 12),
+                              Text('Fichier'),
+                            ],
+                          ),
                         ),
+                        PopupMenuItem<String>(
+                          value: 'image',
+                          child: Row(
+                            children: [
+                              Icon(Icons.photo_library_rounded),
+                              SizedBox(width: 12),
+                              Text('Photo'),
+                            ],
+                          ),
+                        ),
+                      ],
+                      child: Icon(
+                        Icons.add_rounded,
+                        size: 26,
+                        color: _conversationId == null
+                            ? _inputHintGrey.withValues(alpha: 0.6)
+                            : _inputPlusBlue,
                       ),
-                      minLines: 1,
-                      maxLines: 4,
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.9),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: HeadsAppColors.border),
-                ),
-                child: IconButton(
-                  onPressed: _isRecording
-                      ? _stopAndSendRecording
-                      : _startRecording,
-                  padding: EdgeInsets.zero,
-                  tooltip: _isRecording
-                      ? 'Arrêter l’enregistrement'
-                      : 'Message vocal',
-                  icon: Icon(
-                    _isRecording
-                        ? Icons.stop_rounded
-                        : Icons.mic_none_rounded,
-                    size: 19,
+                Expanded(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 48),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: _patientInputSurfaceGreyForReopenAnim
+                            ? Colors.grey.shade200
+                            : Colors.white,
+                        borderRadius: BorderRadius.circular(28),
+                      ),
+                      child: TextField(
+                        controller: _textController,
+                        textInputAction: TextInputAction.send,
+                        onChanged: _onPatientTextChangedTyping,
+                        onSubmitted: (_) => _onSendPressed(),
+                        decoration: const InputDecoration(
+                          hintText: 'Écrivez votre message...',
+                          hintStyle: TextStyle(
+                            color: _inputHintGrey,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 14,
+                          ),
+                        ),
+                        minLines: 1,
+                        maxLines: 4,
+                      ),
+                    ),
                   ),
-                  color: _isRecording
-                      ? Colors.red
-                      : Colors.grey.shade700,
                 ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: _sendIconColor().withValues(alpha: 0.14),
-                  shape: BoxShape.circle,
+                const SizedBox(width: 8),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: _buildPatientInputCircleButton(
+                    tooltip: _isRecording
+                        ? 'Arrêter l’enregistrement'
+                        : 'Message vocal',
+                    backgroundColor: _isRecording
+                        ? const Color(0xFFD65D66)
+                        : _inputActionBlue,
+                    boxShadow: _inputCircleShadow,
+                    onPressed: _isRecording
+                        ? _stopAndSendRecording
+                        : _startRecording,
+                    icon: Icon(
+                      _isRecording
+                          ? Icons.stop_rounded
+                          : Icons.mic_none_rounded,
+                      size: 22,
+                      color: Colors.white,
+                    ),
+                  ),
                 ),
-                child: IconButton(
-                  onPressed: _onSendPressed,
-                  padding: EdgeInsets.zero,
-                  icon: const Icon(Icons.send_rounded, size: 22),
-                  color: _sendIconColor(),
+                const SizedBox(width: 8),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: _buildPatientInputCircleButton(
+                    tooltip: 'Envoyer',
+                    backgroundColor: _inputSendBtnBg,
+                    boxShadow: _inputCircleShadow,
+                    onPressed: _onSendPressed,
+                    icon: Icon(
+                      Icons.send_rounded,
+                      size: 20,
+                      color: _sendIconColor(),
+                    ),
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -4171,70 +4233,6 @@ class _PatientDateChip extends StatelessWidget {
               fontSize: 12,
               fontWeight: FontWeight.w600,
               color: Color(0xFF4B5563),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PatientSessionClosedLine extends StatelessWidget {
-  const _PatientSessionClosedLine({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Center(
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: Colors.grey.shade200,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            text,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 13,
-              color: Colors.grey.shade700,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PatientSessionReopenedLine extends StatelessWidget {
-  const _PatientSessionReopenedLine({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Center(
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: const Color(0xFFE8F5E9),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            text,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 13,
-              color: Color(0xFF1B5E20),
-              fontStyle: FontStyle.italic,
             ),
           ),
         ),

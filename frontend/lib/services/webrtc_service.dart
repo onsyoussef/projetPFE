@@ -53,6 +53,10 @@ class WebRtcService {
       StreamController<String>.broadcast();
   final StreamController<Map<String, dynamic>> _teleconsultRequestDecisionCtrl =
       StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<Map<String, dynamic>> _teleconsultFormDecisionCtrl =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<Map<String, dynamic>> _patientRdvNotificationCtrl =
+      StreamController<Map<String, dynamic>>.broadcast();
   final StreamController<Map<String, dynamic>> _patientDoctorRepliedFormCtrl =
       StreamController<Map<String, dynamic>>.broadcast();
   final StreamController<Map<String, dynamic>> _patientChatSessionClosedCtrl =
@@ -93,6 +97,10 @@ class WebRtcService {
   /// Décision médecin sur une demande de téléconsultation (notification type « push » in-app).
   Stream<Map<String, dynamic>> get teleconsultRequestDecisions =>
       _teleconsultRequestDecisionCtrl.stream;
+  Stream<Map<String, dynamic>> get teleconsultFormDecisions =>
+      _teleconsultFormDecisionCtrl.stream;
+  Stream<Map<String, dynamic>> get patientRdvNotifications =>
+      _patientRdvNotificationCtrl.stream;
   Stream<Map<String, dynamic>> get patientDoctorRepliedFormEvents =>
       _patientDoctorRepliedFormCtrl.stream;
   Stream<Map<String, dynamic>> get patientChatSessionClosedEvents =>
@@ -415,6 +423,16 @@ class WebRtcService {
         _teleconsultRequestDecisionCtrl.add(Map<String, dynamic>.from(data));
       }
     });
+    socket.on('patient:teleconsult_form_decision', (data) {
+      if (data is Map) {
+        _teleconsultFormDecisionCtrl.add(Map<String, dynamic>.from(data));
+      }
+    });
+    socket.on('patient:rdv_notification', (data) {
+      if (data is Map) {
+        _patientRdvNotificationCtrl.add(Map<String, dynamic>.from(data));
+      }
+    });
     socket.on('patient:doctor_replied_form', (data) {
       if (data is Map) {
         _patientDoctorRepliedFormCtrl.add(Map<String, dynamic>.from(data));
@@ -532,7 +550,11 @@ class WebRtcService {
     } catch (e) {
       // Cas fréquent Web: caméra/micro déjà occupés dans un autre onglet.
       if (enableVideo) {
-        debugPrint('[WEBRTC][frontend] video getUserMedia failed, fallback audio-only: $e');
+        if (kDebugMode) {
+          debugPrint(
+            '[WEBRTC][frontend] caméra indisponible, appel audio seul',
+          );
+        }
         _isVideoCall = false;
         _localStream = await rtc.navigator.mediaDevices.getUserMedia({
           'audio': true,
