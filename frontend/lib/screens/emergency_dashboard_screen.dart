@@ -13,6 +13,7 @@ import '../espace_patient_page.dart';
 import '../headsapp_theme.dart';
 import '../services/api_service.dart';
 import '../services/emergency_liaison_pdf_service.dart';
+import '../widgets/gradient_button.dart';
 import '../services/emergency_mode_service.dart';
 import '../utils/patient_ui_utils.dart';
 
@@ -308,12 +309,11 @@ class _EmergencyDashboardScreenState extends State<EmergencyDashboardScreen> {
                                       ),
                               ),
                               const SizedBox(height: 14),
-                              _GradientButton(
+                              HeadsAppGradientButton(
                                 label: 'Voir les urgences proches',
-                                colors: const [
-                                  Color(0xFFF9A8D4),
-                                  Color(0xFF93C5FD),
-                                ],
+                                borderRadius: 12,
+                                height: 48,
+                                fontSize: 15,
                                 onPressed: _openNearbyEmergencies,
                               ),
                             ],
@@ -325,14 +325,13 @@ class _EmergencyDashboardScreenState extends State<EmergencyDashboardScreen> {
                           icon: Icons.description_rounded,
                           iconColor: HeadsAppColors.brandPrimary,
                           title: 'Ma Fiche de Liaison',
-                          child: _GradientButton(
+                          child: HeadsAppGradientButton(
                             label: _generatingPdf
                                 ? 'Génération…'
                                 : 'Générer ma fiche',
-                            colors: const [
-                              Color(0xFFE879A9),
-                              HeadsAppColors.brandPrimary,
-                            ],
+                            borderRadius: 12,
+                            height: 48,
+                            fontSize: 15,
                             loading: _generatingPdf,
                             onPressed: _generatingPdf ? null : _generateFiche,
                           ),
@@ -507,65 +506,6 @@ class _DashboardCard extends StatelessWidget {
     );
   }
 }
-
-class _GradientButton extends StatelessWidget {
-  const _GradientButton({
-    required this.label,
-    required this.colors,
-    this.onPressed,
-    this.loading = false,
-  });
-
-  final String label;
-  final List<Color> colors;
-  final VoidCallback? onPressed;
-  final bool loading;
-
-  @override
-  Widget build(BuildContext context) {
-    final enabled = onPressed != null && !loading;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        gradient: enabled
-            ? LinearGradient(colors: colors)
-            : null,
-        color: enabled ? null : const Color(0xFFCBD5E1),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: enabled ? onPressed : null,
-          borderRadius: BorderRadius.circular(12),
-          child: SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: Center(
-              child: loading
-                  ? const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : Text(
-                      label,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                      ),
-                    ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _ConsigneLine extends StatelessWidget {
   const _ConsigneLine({required this.text});
 

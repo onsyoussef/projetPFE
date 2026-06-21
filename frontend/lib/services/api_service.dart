@@ -534,6 +534,51 @@ class ApiService {
     }
   }
 
+  /// Notifications persistées (historique).
+  static Future<Map<String, dynamic>> getPatientNotifications({
+    required String patientId,
+    int limit = 50,
+  }) async {
+    final uri = Uri.parse(
+      '$_baseUrl/patient/${Uri.encodeComponent(patientId)}/notifications?limit=$limit',
+    );
+    final response = await http
+        .get(uri, headers: _headersAuthOnly())
+        .timeout(const Duration(seconds: 12));
+    final data = _decodeBody(response.body);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return data;
+    }
+    throw Exception(data['message'] ?? 'Erreur lors de la récupération des notifications');
+  }
+
+  static Future<void> markPatientNotificationRead({
+    required String patientId,
+    required String notificationId,
+  }) async {
+    final uri = Uri.parse(
+      '$_baseUrl/patient/${Uri.encodeComponent(patientId)}/notifications/${Uri.encodeComponent(notificationId)}/read',
+    );
+    final response = await http.patch(uri, headers: _headersAuthOnly());
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final data = _decodeBody(response.body);
+      throw Exception(data['message'] ?? 'Erreur lors de la mise à jour');
+    }
+  }
+
+  static Future<void> markAllPatientNotificationsRead({
+    required String patientId,
+  }) async {
+    final uri = Uri.parse(
+      '$_baseUrl/patient/${Uri.encodeComponent(patientId)}/notifications/read-all',
+    );
+    final response = await http.patch(uri, headers: _headersAuthOnly());
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final data = _decodeBody(response.body);
+      throw Exception(data['message'] ?? 'Erreur lors de la mise à jour');
+    }
+  }
+
   /// Dossier médical personnel (documents uploadés par le patient, hors chat).
   static Future<List<Map<String, dynamic>>> getPatientMedicalDossier({
     required String patientId,

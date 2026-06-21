@@ -69,7 +69,10 @@ class _ConsultationFinishedScreenState extends State<ConsultationFinishedScreen>
 
   void _returnHome() {
     widget.onLeave?.call();
-    Navigator.of(context).popUntil((route) => route.isFirst);
+    final nav = Navigator.of(context, rootNavigator: true);
+    if (nav.canPop()) {
+      nav.pop();
+    }
   }
 
   void _showRecap() {
@@ -252,7 +255,7 @@ class _ConsultationFinishedScreenState extends State<ConsultationFinishedScreen>
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          'Retour à l\'accueil',
+                          'Retour au chat',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,

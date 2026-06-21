@@ -514,14 +514,20 @@ async function patchFormWorkflow(req, res) {
         const doctor = await Doctor.findById(did).select('fullName photoPath').lean();
         const doctorName = decrypt(doctor?.fullName) || 'Médecin';
         emitToConversation(replyConversationId, 'chat:new_activity', { conversationId: replyConversationId });
-        emitToUserId(pid, 'patient:doctor_replied_form', {
+        await notifyPatientPushAndSocket({
+          patientId: pid,
+          socketEvent: 'patient:doctor_replied_form',
           title: 'Réponse de votre médecin 💬',
           body: `Dr. ${doctorName} a répondu à votre formulaire. Ouvrez le chat.`,
-          conversationId: replyConversationId,
-          doctorId: did,
-          doctorName,
-          doctorPhotoPath: doctor?.photoPath || null,
-          openChat: true,
+          pushType: 'doctor_replied_form',
+          payload: {
+            conversationId: replyConversationId,
+            doctorId: did,
+            doctorName,
+            doctorPhotoPath: doctor?.photoPath || null,
+            formId: String(form._id),
+            openChat: true,
+          },
         });
       }
     }

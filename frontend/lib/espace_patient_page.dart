@@ -22,6 +22,7 @@ import 'services/patient_reply_notification_service.dart';
 import 'services/webrtc_service.dart';
 import 'widgets/patient_logout_dialog.dart';
 import 'utils/patient_session_utils.dart';
+import 'utils/patient_notification_mapper.dart';
 import 'utils/patient_ui_utils.dart';
 
 class EspacePatientPage extends StatefulWidget {
@@ -55,8 +56,8 @@ class _EspacePatientPageState extends State<EspacePatientPage> with WidgetsBindi
   StreamSubscription<Map<String, dynamic>>? _patientChatSessionReopenedSub;
   StreamSubscription<Map<String, dynamic>>? _inboxNewMsgSub;
 
-  /// Alertes « Répondre par message » visibles dans la cloche (hors chat).
-  final List<_PendingDoctorReply> _pendingDoctorReplies = [];
+  /// Notifications persistées (API).
+  List<Map<String, dynamic>> _storedNotifications = [];
   int _unreadNotificationCount = 0;
   int _inboxMessageBadge = 0;
 
@@ -70,6 +71,7 @@ class _EspacePatientPageState extends State<EspacePatientPage> with WidgetsBindi
     if (kIsWeb) return;
     if (state == AppLifecycleState.resumed) {
       WebRtcService.instance.emitPatientAppLifecycle(true);
+      unawaited(_syncNotificationsFromApi());
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive ||
         state == AppLifecycleState.detached) {
@@ -106,6 +108,7 @@ class _EspacePatientPageState extends State<EspacePatientPage> with WidgetsBindi
       _playReplyNotificationSound(isMessage: true);
     });
     _syncInboxBadgeFromApi();
+    unawaited(_syncNotificationsFromApi());
     _replyNotifService.start(
       interval: const Duration(seconds: 3),
       notificationsEnabled: () => _notificationsEnabled,
@@ -140,6 +143,27 @@ class _EspacePatientPageState extends State<EspacePatientPage> with WidgetsBindi
       }
     }
     return total.clamp(0, 99);
+  }
+
+  Future<void> _syncNotificationsFromApi() async {
+    try {
+      final bundle = await ApiService.getPatientNotifications(
+        patientId: widget.patientId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _storedNotifications = (bundle['notifications'] as List?)
+                ?.map((e) => Map<String, dynamic>.from(e as Map))
+                .toList() ??
+            [];
+        final unread = bundle['unreadCount'];
+        _unreadNotificationCount = unread is num
+            ? unread.toInt().clamp(0, 99)
+            : _storedNotifications.where((n) => n['read'] != true).length;
+      });
+    } catch (_) {
+      // Non bloquant.
+    }
   }
 
   Future<void> _syncInboxBadgeFromApi() async {
@@ -255,45 +279,13 @@ class _EspacePatientPageState extends State<EspacePatientPage> with WidgetsBindi
     final cid = p['conversationId']?.toString() ?? '';
     final status = p['status']?.toString() ?? '';
     final joined = WebRtcService.instance.joinedConversationId ?? '';
-    final requestId = isForm ? '' : (p['requestId']?.toString() ?? '');
-    final formId = isForm ? (p['formId']?.toString() ?? '') : '';
 
     if (status == 'accepted' && cid.isNotEmpty && cid == joined) {
       return;
     }
 
-    final title = p['title']?.toString() ?? 'Téléconsultation';
-    final body = p['body']?.toString() ?? '';
-    final openChat = p['openChat'] == true;
-    final doctorId = p['doctorId']?.toString() ?? '';
-    final doctorName = readableDoctorName(p['doctorName']?.toString());
-    final doctorPhotoPath = p['doctorPhotoPath']?.toString();
-
-    setState(() {
-      final exists = isForm
-          ? formId.isNotEmpty &&
-              _pendingDoctorReplies.any((e) => e.formId == formId)
-          : requestId.isNotEmpty &&
-              _pendingDoctorReplies.any((e) => e.requestId == requestId);
-      if (!exists) {
-        _pendingDoctorReplies.add(
-          _PendingDoctorReply(
-            conversationId: cid,
-            doctorId: doctorId,
-            doctorName: doctorName,
-            doctorPhotoPath: doctorPhotoPath,
-            requestId: requestId.isNotEmpty ? requestId : null,
-            formId: formId.isNotEmpty ? formId : null,
-            teleconsultDecisionStatus: status,
-            decisionTitle: title,
-            decisionBody: body,
-            openChatOnTap: openChat,
-          ),
-        );
-        _unreadNotificationCount++;
-      }
-    });
     _playReplyNotificationSound();
+    unawaited(_syncNotificationsFromApi());
   }
 
   void _onPatientRdvNotificationEvent(Map<String, dynamic> p) {
@@ -385,13 +377,6 @@ class _EspacePatientPageState extends State<EspacePatientPage> with WidgetsBindi
     }
   }
 
-  String _formatPendingDate(String iso) {
-    final d = DateTime.tryParse(iso);
-    if (d == null) return iso;
-    final l = d.toLocal();
-    return '${l.day}/${l.month}/${l.year}';
-  }
-
   String _formatPendingTime(String iso) {
     final d = DateTime.tryParse(iso);
     if (d == null) return '--:--';
@@ -408,25 +393,8 @@ class _EspacePatientPageState extends State<EspacePatientPage> with WidgetsBindi
     String? doctorPhotoPath,
   }) {
     if (!mounted) return;
-    setState(() {
-      final exists = _pendingDoctorReplies.any(
-        (e) =>
-            e.conversationId == conversationId && e.scheduledAtIso == null,
-      );
-      if (!exists) {
-        _pendingDoctorReplies.add(
-          _PendingDoctorReply(
-            conversationId: conversationId,
-            doctorId: doctorId,
-            doctorName: doctorName,
-            doctorPhotoPath: doctorPhotoPath,
-          ),
-        );
-        _unreadNotificationCount++;
-      }
-    });
-    // Notification audio + badge sur l’icône cloche uniquement (pas de SnackBar dans l’espace patient).
     _playReplyNotificationSound();
+    unawaited(_syncNotificationsFromApi());
   }
 
   void _onTeleconsultScheduledOutsideChat(
@@ -437,35 +405,15 @@ class _EspacePatientPageState extends State<EspacePatientPage> with WidgetsBindi
     String? doctorPhotoPath,
   }) {
     if (!mounted) return;
-    setState(() {
-      final exists = _pendingDoctorReplies.any(
-        (e) =>
-            e.conversationId == conversationId &&
-            e.scheduledAtIso == scheduledAtIso,
-      );
-      if (!exists) {
-        _pendingDoctorReplies.add(
-          _PendingDoctorReply(
-            conversationId: conversationId,
-            doctorId: doctorId,
-            doctorName: doctorName,
-            scheduledAtIso: scheduledAtIso,
-            doctorPhotoPath: doctorPhotoPath,
-          ),
-        );
-        _unreadNotificationCount++;
-      }
-    });
     _playReplyNotificationSound();
+    unawaited(_syncNotificationsFromApi());
   }
 
-  void _openChatFromPending(
-    String conversationId,
-    String doctorId,
-    String doctorName, {
-    String? doctorPhotoPath,
-  }) {
-    _removePending(conversationId);
+  void _openChatFromNotification(Map<String, dynamic> payload) {
+    final doctorId = payload['doctorId']?.toString() ?? '';
+    final doctorName = readableDoctorName(payload['doctorName']?.toString());
+    final doctorPhotoPath = payload['doctorPhotoPath']?.toString();
+    if (doctorId.isEmpty) return;
     _decrementInboxMessageBadge();
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -479,137 +427,68 @@ class _EspacePatientPageState extends State<EspacePatientPage> with WidgetsBindi
     );
   }
 
-  void _removePending(String conversationId) {
-    setState(() {
-      _pendingDoctorReplies.removeWhere((e) => e.conversationId == conversationId);
-      _syncUnreadNotificationCount();
-    });
-  }
+  Future<void> _openNotificationsPanel() async {
+    await _syncNotificationsFromApi();
+    if (!mounted) return;
 
-  void _dismissTeleconsultDecisionNotification(_PendingDoctorReply item) {
-    setState(() {
-      if (item.formId != null && item.formId!.isNotEmpty) {
-        _pendingDoctorReplies.removeWhere((e) => e.formId == item.formId);
-      } else if (item.requestId != null && item.requestId!.isNotEmpty) {
-        _pendingDoctorReplies.removeWhere((e) => e.requestId == item.requestId);
-      } else {
-        _pendingDoctorReplies.removeWhere(
-          (e) =>
-              e.conversationId == item.conversationId &&
-              e.teleconsultDecisionStatus == item.teleconsultDecisionStatus,
-        );
-      }
-      _syncUnreadNotificationCount();
-    });
-  }
-
-  void _syncUnreadNotificationCount() {
-    _unreadNotificationCount =
-        _pendingDoctorReplies.where((e) => e.isNew).length;
-  }
-
-  _PendingDoctorReply? _findPendingByNotificationId(String id) {
-    for (final item in _pendingDoctorReplies) {
-      if (item.notificationId == id) return item;
-    }
-    return null;
-  }
-
-  PatientNotificationEntry _notificationEntryFromPending(
-    _PendingDoctorReply item,
-  ) {
-    if (item.teleconsultDecisionStatus == 'accepted') {
-      return PatientNotificationEntry(
-        id: item.notificationId,
-        type: PatientNotificationType.accepted,
-        title: item.decisionTitle ?? 'Demande acceptée',
-        description: item.decisionBody?.isNotEmpty == true
-            ? item.decisionBody!
-            : '${item.doctorName} a validé votre demande de suivi.',
-        timestamp: item.createdAt,
-        isNew: item.isNew,
-      );
-    }
-    if (item.teleconsultDecisionStatus == 'rejected') {
-      return PatientNotificationEntry(
-        id: item.notificationId,
-        type: PatientNotificationType.rejected,
-        title: item.decisionTitle ?? 'Demande refusée',
-        description: item.decisionBody?.isNotEmpty == true
-            ? item.decisionBody!
-            : '${item.doctorName} n\'a pas pu accepter votre demande.',
-        timestamp: item.createdAt,
-        isNew: item.isNew,
-      );
-    }
-    if (item.scheduledAtIso != null) {
-      return PatientNotificationEntry(
-        id: item.notificationId,
-        type: PatientNotificationType.teleconsult,
-        title: 'Demande de téléconsultation',
-        description:
-            '${item.doctorName} propose un créneau pour le ${_formatPendingDate(item.scheduledAtIso!)} à ${_formatPendingTime(item.scheduledAtIso!)}.',
-        timestamp: item.createdAt,
-        isNew: item.isNew,
-      );
-    }
-    return PatientNotificationEntry(
-      id: item.notificationId,
-      type: PatientNotificationType.message,
-      title: 'Nouveau message',
-      description:
-          '${item.doctorName} vous a répondu — ouvrir la discussion.',
-      timestamp: item.createdAt,
-      isNew: item.isNew,
-    );
-  }
-
-  void _openNotificationsPanel() {
-    final entries = _pendingDoctorReplies
-        .map(_notificationEntryFromPending)
+    final entries = _storedNotifications
+        .map(patientNotificationEntryFromApi)
         .toList()
       ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
-    Navigator.of(context)
-        .push<void>(
+    await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => PatientNotificationsScreen(
           items: entries,
-          onMarkAllAsRead: () {
+          onMarkAllAsRead: () async {
+            try {
+              await ApiService.markAllPatientNotificationsRead(
+                patientId: widget.patientId,
+              );
+            } catch (_) {}
+            if (!mounted) return;
             setState(() {
-              for (final item in _pendingDoctorReplies) {
-                item.isNew = false;
+              for (final item in _storedNotifications) {
+                item['read'] = true;
               }
               _unreadNotificationCount = 0;
             });
           },
-          onItemTap: (entry) {
-            final item = _findPendingByNotificationId(entry.id);
-            if (item == null) return;
+          onItemTap: (entry) async {
+            Map<String, dynamic>? raw;
+            for (final item in _storedNotifications) {
+              if (item['id']?.toString() == entry.id) {
+                raw = item;
+                break;
+              }
+            }
+            if (raw == null) return;
+            try {
+              await ApiService.markPatientNotificationRead(
+                patientId: widget.patientId,
+                notificationId: entry.id,
+              );
+            } catch (_) {}
+            if (!mounted) return;
             setState(() {
-              item.isNew = false;
-              _syncUnreadNotificationCount();
+              raw!['read'] = true;
+              _unreadNotificationCount = _storedNotifications
+                  .where((n) => n['read'] != true)
+                  .length
+                  .clamp(0, 99);
             });
             Navigator.of(context).pop();
-            if (item.openChatOnTap && item.doctorId.isNotEmpty) {
-              _openChatFromPending(
-                item.conversationId,
-                item.doctorId,
-                item.doctorName,
-                doctorPhotoPath: item.doctorPhotoPath,
-              );
-            } else {
-              _dismissTeleconsultDecisionNotification(item);
+            final payload = patientNotificationPayload(raw);
+            if (payload != null && patientNotificationOpenChatOnTap(raw)) {
+              _openChatFromNotification(payload);
             }
           },
         ),
       ),
-    )
-        .then((_) {
-      if (mounted) {
-        setState(_syncUnreadNotificationCount);
-      }
-    });
+    );
+    if (mounted) {
+      await _syncNotificationsFromApi();
+    }
   }
 
   static const Color _primary = HeadsAppColors.brandAccent;
@@ -1165,14 +1044,7 @@ class _PatientDrawerAvatar extends StatelessWidget {
       height: 88,
       decoration: const BoxDecoration(
         shape: BoxShape.circle,
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Color(0xFFE879A9),
-            Color(0xFF4A89DC),
-          ],
-        ),
+        gradient: HeadsAppColors.primaryButtonGradient,
       ),
       child: Padding(
         padding: const EdgeInsets.all(3),
@@ -1239,52 +1111,6 @@ class _PatientDrawerTile extends StatelessWidget {
     );
   }
 }
-
-class _PendingDoctorReply {
-  _PendingDoctorReply({
-    required this.conversationId,
-    required this.doctorId,
-    required this.doctorName,
-    this.scheduledAtIso,
-    this.doctorPhotoPath,
-    this.requestId,
-    this.formId,
-    this.teleconsultDecisionStatus,
-    this.decisionTitle,
-    this.decisionBody,
-    this.openChatOnTap = true,
-    DateTime? createdAt,
-    this.isNew = true,
-  }) : createdAt = createdAt ?? DateTime.now();
-
-  final String conversationId;
-  final String doctorId;
-  final String doctorName;
-  /// Non null = notification « date de téléconsultation ».
-  final String? scheduledAtIso;
-  final String? doctorPhotoPath;
-  /// Déduplication des décisions demande (`patient:teleconsult_request_decision`).
-  final String? requestId;
-  /// Déduplication des décisions formulaire (`patient:teleconsult_form_decision`).
-  final String? formId;
-  /// `accepted` | `rejected` — décision sur une demande de téléconsultation.
-  final String? teleconsultDecisionStatus;
-  final String? decisionTitle;
-  final String? decisionBody;
-  final bool openChatOnTap;
-  final DateTime createdAt;
-  bool isNew;
-
-  String get notificationId {
-    if (formId != null && formId!.isNotEmpty) return 'form_$formId';
-    if (requestId != null && requestId!.isNotEmpty) return requestId!;
-    if (scheduledAtIso != null) {
-      return '${conversationId}_$scheduledAtIso';
-    }
-    return '${conversationId}_message';
-  }
-}
-
 class _MenuCard extends StatelessWidget {
   const _MenuCard({
     required this.icon,

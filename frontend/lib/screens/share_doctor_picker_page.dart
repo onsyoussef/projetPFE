@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../headsapp_theme.dart';
 import '../services/api_service.dart';
 import '../utils/patient_ui_utils.dart';
 import '../widgets/share_success_dialog.dart';
@@ -318,15 +319,10 @@ class _ShareDoctorPickerPageState extends State<ShareDoctorPickerPage> {
         child: DecoratedBox(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
-            gradient: const LinearGradient(
-              colors: [
-                Color(0xFFE8719A),
-                Color(0xFF3B82F6),
-              ],
-            ),
+            gradient: HeadsAppColors.primaryButtonGradient,
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF3B82F6).withValues(alpha: 0.28),
+                color: HeadsAppColors.authGradientEnd.withValues(alpha: 0.28),
                 blurRadius: 16,
                 offset: const Offset(0, 8),
               ),
@@ -361,9 +357,9 @@ class _ShareDoctorPickerPageState extends State<ShareDoctorPickerPage> {
                               color: Colors.white,
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(
+                            child: Icon(
                               Icons.check_rounded,
-                              color: Color(0xFF3B82F6),
+                              color: HeadsAppColors.authGradientEnd,
                               size: 18,
                             ),
                           ),

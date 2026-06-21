@@ -3,14 +3,13 @@ import 'package:flutter/material.dart';
 import '../chat_medecin_page.dart';
 import '../screens/doctor_blood_pressure_screen.dart';
 import '../services/api_service.dart';
+import '../utils/doctor_ui_utils.dart';
 import '../widgets/doctor_notifications_sheet.dart';
-import 'doctor_notification_dismiss_storage.dart';
-import 'doctor_ui_utils.dart';
-import 'doctor_waiting_room_dismiss_storage.dart';
 
 class DoctorNotificationEntry {
   const DoctorNotificationEntry({
     required this.sheetId,
+    required this.notificationId,
     required this.conversationId,
     required this.title,
     required this.subtitle,
@@ -18,12 +17,12 @@ class DoctorNotificationEntry {
     required this.kind,
     this.patientId,
     this.patientPhotoPath,
-    this.waitingEnteredAt,
     this.occurredAt,
-    this.alertDismissId,
+    this.isRead = false,
   });
 
   final String sheetId;
+  final String notificationId;
   final String conversationId;
   final String title;
   final String subtitle;
@@ -32,147 +31,93 @@ class DoctorNotificationEntry {
   final String? patientPhotoPath;
   final DoctorNotificationVisualKind kind;
   final DateTime? occurredAt;
-  final int? waitingEnteredAt;
-  final String? alertDismissId;
+  final bool isRead;
 
-  bool get isWaitingRoom => waitingEnteredAt != null;
-  bool get isBloodPressureAlert => alertDismissId != null;
+  bool get isWaitingRoom => kind == DoctorNotificationVisualKind.urgent &&
+      subtitle.toLowerCase().contains('attente');
 }
 
-bool doctorConversationQualifiesForNotification(Map<String, dynamic> c) {
-  if (c['urgenceFormulairePending'] == true) return false;
-  final lastType = c['lastMessageType']?.toString() ?? '';
-  final lastFrom = c['lastMessageFromType']?.toString() ?? '';
-  if (lastType != 'request_teleconsult' && lastType != 'form_teleconsult') {
-    return false;
+DoctorNotificationVisualKind _kindFromApi(
+  String type,
+  String title,
+  String body,
+) {
+  final t = type.toLowerCase();
+  final combined = '$title $body'.toLowerCase();
+  if (t.contains('blood_pressure') || combined.contains('tension')) {
+    return DoctorNotificationVisualKind.analysis;
   }
-  return lastFrom == 'patient' || lastFrom == 'system';
+  if (t.contains('waiting') || combined.contains('attente')) {
+    return DoctorNotificationVisualKind.urgent;
+  }
+  if (t.contains('form') || combined.contains('analyse') || combined.contains('formulaire')) {
+    return DoctorNotificationVisualKind.analysis;
+  }
+  if (combined.contains('urgence')) {
+    return DoctorNotificationVisualKind.urgent;
+  }
+  if (t.contains('teleconsult_request') || t.contains('chat_message')) {
+    return DoctorNotificationVisualKind.message;
+  }
+  return DoctorNotificationVisualKind.newPatient;
+}
+
+DoctorNotificationEntry _entryFromApi(Map<String, dynamic> raw) {
+  final id = raw['id']?.toString() ?? '';
+  final type = raw['type']?.toString() ?? '';
+  final title = raw['title']?.toString() ?? 'Notification';
+  final body = raw['body']?.toString() ?? '';
+  final payload = raw['payload'] is Map
+      ? Map<String, dynamic>.from(raw['payload'] as Map)
+      : <String, dynamic>{};
+  final occurredAt = DateTime.tryParse(raw['createdAt']?.toString() ?? '');
+
+  final patientName = readablePatientName(payload['patientName']?.toString());
+  final conversationId = payload['conversationId']?.toString() ?? '';
+  final kind = _kindFromApi(type, title, body);
+
+  return DoctorNotificationEntry(
+    sheetId: id.isNotEmpty ? id : '$type-${occurredAt?.millisecondsSinceEpoch ?? 0}',
+    notificationId: id,
+    conversationId: conversationId,
+    title: title,
+    subtitle: body.isNotEmpty ? body : title,
+    patientName: patientName,
+    patientId: payload['patientId']?.toString(),
+    patientPhotoPath: payload['patientPhotoPath']?.toString(),
+    kind: kind,
+    occurredAt: occurredAt,
+    isRead: raw['read'] == true,
+  );
 }
 
 Future<List<DoctorNotificationEntry>> loadDoctorNotificationEntries({
   required String doctorId,
 }) async {
   if (doctorId.isEmpty) return const [];
-
-  final dismissed = await DoctorNotificationDismissStorage.getMap(doctorId);
-  final waitingDismissed =
-      await DoctorWaitingRoomDismissStorage.getMap(doctorId);
-
-  List<Map<String, dynamic>> conversations = [];
-  List<Map<String, dynamic>> waitingItems = [];
   try {
-    conversations = await ApiService.getDoctorConversations(doctorId: doctorId);
-  } catch (_) {}
-  try {
-    waitingItems = await ApiService.getDoctorWaitingRooms(doctorId: doctorId);
-  } catch (_) {}
-
-  String? photoForConv(String conversationId) {
-    for (final c in conversations) {
-      if (c['conversationId']?.toString() == conversationId) {
-        return c['patientPhotoPath']?.toString();
-      }
-    }
-    return null;
+    final bundle = await ApiService.getDoctorNotifications(doctorId: doctorId);
+    final list = (bundle['notifications'] as List?)
+            ?.map((e) => Map<String, dynamic>.from(e as Map))
+            .toList() ??
+        [];
+    return list.map(_entryFromApi).toList();
+  } catch (_) {
+    return const [];
   }
-
-  String? patientIdForConv(String conversationId) {
-    for (final c in conversations) {
-      if (c['conversationId']?.toString() == conversationId) {
-        final p = c['patientId']?.toString();
-        if (p != null && p.isNotEmpty) return p;
-      }
-    }
-    return null;
-  }
-
-  final out = <DoctorNotificationEntry>[];
-
-  for (final w in waitingItems) {
-    final cid = w['conversationId']?.toString() ?? '';
-    if (cid.isEmpty) continue;
-    final rawAt = w['enteredAt']?.toString();
-    final dt = DateTime.tryParse(rawAt ?? '');
-    final ms = dt?.millisecondsSinceEpoch ??
-        DateTime.now().millisecondsSinceEpoch;
-    if (waitingRoomSessionDismissed(cid, ms, waitingDismissed)) continue;
-
-    final name = readablePatientName(w['patientName']?.toString());
-    out.add(
-      DoctorNotificationEntry(
-        sheetId: 'wr-$cid-$ms',
-        conversationId: cid,
-        title: 'Alerte Urgence — $name',
-        subtitle: 'Le patient est en attente de téléconsultation.',
-        patientName: name,
-        patientId: w['patientId']?.toString() ?? patientIdForConv(cid),
-        patientPhotoPath: photoForConv(cid),
-        waitingEnteredAt: ms,
-        kind: DoctorNotificationVisualKind.urgent,
-        occurredAt: DateTime.fromMillisecondsSinceEpoch(ms),
-      ),
-    );
-  }
-
-  for (final c in conversations) {
-    final id = c['conversationId']?.toString() ?? '';
-    if (id.isEmpty) continue;
-    if (notificationDismissedForConversation(c, dismissed)) continue;
-    if (!doctorConversationQualifiesForNotification(c)) continue;
-
-    final name = readablePatientName(c['patientName']?.toString());
-    final last = c['lastMessage']?.toString() ?? '';
-    final lastType = c['lastMessageType']?.toString() ?? '';
-    final tags = conversationTags(c['tags']);
-    final occurredAt = DateTime.tryParse(
-      c['lastMessageAt']?.toString() ?? c['updatedAt']?.toString() ?? '',
-    );
-
-    late final String title;
-    late final String subtitle;
-    late final DoctorNotificationVisualKind kind;
-    if (lastType == 'request_teleconsult') {
-      if (tags.contains('urgent')) {
-        kind = DoctorNotificationVisualKind.urgent;
-        title = 'Alerte Urgence — $name';
-        subtitle =
-            last.isNotEmpty ? last : 'Intervention requise pour ce patient.';
-      } else {
-        kind = DoctorNotificationVisualKind.message;
-        title = 'Messages — $name';
-        subtitle = last.isNotEmpty
-            ? last
-            : '$name vous a envoyé une demande de téléconsultation.';
-      }
-    } else {
-      kind = DoctorNotificationVisualKind.analysis;
-      title = 'Analyses Reçues — $name';
-      subtitle = last.isNotEmpty
-          ? last
-          : 'Les résultats sont disponibles dans son dossier.';
-    }
-
-    out.add(
-      DoctorNotificationEntry(
-        sheetId: 'conv-$id',
-        conversationId: id,
-        title: title,
-        subtitle: subtitle,
-        patientName: name,
-        patientId: c['patientId']?.toString(),
-        patientPhotoPath: c['patientPhotoPath']?.toString(),
-        kind: kind,
-        occurredAt: occurredAt,
-      ),
-    );
-  }
-
-  return out;
 }
 
 Future<int> countDoctorNotifications(String doctorId) async {
-  final items = await loadDoctorNotificationEntries(doctorId: doctorId);
-  return items.length;
+  if (doctorId.isEmpty) return 0;
+  try {
+    final bundle = await ApiService.getDoctorNotifications(doctorId: doctorId);
+    final unread = bundle['unreadCount'];
+    if (unread is num) return unread.toInt().clamp(0, 99);
+    final list = (bundle['notifications'] as List?) ?? [];
+    return list.where((n) => (n as Map)['read'] != true).length;
+  } catch (_) {
+    return 0;
+  }
 }
 
 DoctorNotificationSheetItem _toSheetItem(
@@ -187,8 +132,8 @@ DoctorNotificationSheetItem _toSheetItem(
     title: n.title,
     subtitle: n.subtitle,
     occurredAt: n.occurredAt,
-    dismissible: n.isWaitingRoom || n.isBloodPressureAlert,
-    onTap: n.isWaitingRoom
+    dismissible: false,
+    onTap: n.conversationId.isNotEmpty && (n.patientId?.isNotEmpty ?? false)
         ? () {
             beforeNavigate?.call();
             WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -207,7 +152,8 @@ DoctorNotificationSheetItem _toSheetItem(
               );
             });
           }
-        : n.isBloodPressureAlert
+        : n.kind == DoctorNotificationVisualKind.analysis &&
+                n.subtitle.toLowerCase().contains('tension')
             ? () {
                 beforeNavigate?.call();
                 WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -234,34 +180,9 @@ Future<void> showDoctorNotificationsPanel(
   var entries = await loadDoctorNotificationEntries(doctorId: doctorId);
   if (!context.mounted) return;
 
-  final convUpdates = <String, String>{};
-  for (final n in entries) {
-    if (n.isWaitingRoom || n.isBloodPressureAlert) continue;
-    for (final c in await ApiService.getDoctorConversations(doctorId: doctorId)) {
-      if (c['conversationId']?.toString() == n.conversationId) {
-        convUpdates[n.conversationId] = notificationDismissSnapshotIso(c);
-        break;
-      }
-    }
-  }
-  if (convUpdates.isNotEmpty) {
-    await DoctorNotificationDismissStorage.merge(doctorId, convUpdates);
-    entries = await loadDoctorNotificationEntries(doctorId: doctorId);
-    if (!context.mounted) return;
-  }
-
   await showDoctorNotificationsSheet(
     context,
-    items: entries
-        .map(
-          (n) => _toSheetItem(
-            n,
-            context,
-            doctorId: doctorId,
-            beforeNavigate: beforeNavigate,
-          ),
-        )
-        .toList(),
+    items: entries.map((n) => _toSheetItem(n, context, doctorId: doctorId, beforeNavigate: beforeNavigate)).toList(),
     onDismissItem: (item) async {
       DoctorNotificationEntry? match;
       for (final n in entries) {
@@ -270,45 +191,18 @@ Future<void> showDoctorNotificationsPanel(
           break;
         }
       }
-      if (match == null) return;
-      if (match.isWaitingRoom && match.waitingEnteredAt != null) {
-        await DoctorWaitingRoomDismissStorage.merge(doctorId, {
-          match.conversationId: '${match.waitingEnteredAt}',
-        });
-      } else if (!match.isBloodPressureAlert) {
-        for (final c
-            in await ApiService.getDoctorConversations(doctorId: doctorId)) {
-          if (c['conversationId']?.toString() == match.conversationId) {
-            await DoctorNotificationDismissStorage.merge(doctorId, {
-              match.conversationId: notificationDismissSnapshotIso(c),
-            });
-            break;
-          }
-        }
-      }
+      if (match == null || match.notificationId.isEmpty) return;
+      try {
+        await ApiService.markDoctorNotificationRead(
+          doctorId: doctorId,
+          notificationId: match.notificationId,
+        );
+      } catch (_) {}
     },
     onDismissAll: () async {
-      final waitingUpdates = <String, String>{};
-      final convDismiss = <String, String>{};
-      for (final n in entries) {
-        if (n.isWaitingRoom && n.waitingEnteredAt != null) {
-          waitingUpdates[n.conversationId] = '${n.waitingEnteredAt}';
-        } else if (!n.isBloodPressureAlert) {
-          for (final c
-              in await ApiService.getDoctorConversations(doctorId: doctorId)) {
-            if (c['conversationId']?.toString() == n.conversationId) {
-              convDismiss[n.conversationId] = notificationDismissSnapshotIso(c);
-              break;
-            }
-          }
-        }
-      }
-      if (waitingUpdates.isNotEmpty) {
-        await DoctorWaitingRoomDismissStorage.merge(doctorId, waitingUpdates);
-      }
-      if (convDismiss.isNotEmpty) {
-        await DoctorNotificationDismissStorage.merge(doctorId, convDismiss);
-      }
+      try {
+        await ApiService.markAllDoctorNotificationsRead(doctorId: doctorId);
+      } catch (_) {}
     },
   );
 }

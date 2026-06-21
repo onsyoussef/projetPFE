@@ -10,6 +10,7 @@ import 'headsapp_theme.dart';
 import 'services/api_service.dart';
 import 'utils/patient_ui_utils.dart';
 import 'widgets/doctor_interaction_dialog.dart';
+import 'widgets/gradient_button.dart';
 
 enum _FilterMode { nameOnly, nameAndSpecialty, governorateAndSpecialty, all }
 
@@ -70,17 +71,40 @@ class _ChoixMedecinPageState extends State<ChoixMedecinPage> {
   Timer? _searchDebounce;
   static const Duration _searchDebounceDuration = Duration(milliseconds: 400);
 
+  bool get _usePosition => _userLat != null && _userLon != null;
+
+  bool get _hasSearchCriteria {
+    if (_usePosition) return true;
+    if (_specialty != null && _specialty!.trim().isNotEmpty) return true;
+    if (_governorate != null && _governorate!.trim().isNotEmpty) return true;
+    if (_allowName && _nameController.text.trim().length >= 1) return true;
+    return false;
+  }
+
   @override
   void initState() {
     super.initState();
     _nameController.addListener(_onSearchInputChanged);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _scheduleSearch(immediate: true);
-    });
   }
 
   void _onSearchInputChanged() {
-    _scheduleSearch();
+    _maybeAutoSearch();
+  }
+
+  void _maybeAutoSearch({bool immediate = false}) {
+    if (!_hasSearchCriteria) {
+      _searchDebounce?.cancel();
+      if (_hasSearched || _loading) {
+        setState(() {
+          _hasSearched = false;
+          _doctors = [];
+          _searchError = null;
+          _loading = false;
+        });
+      }
+      return;
+    }
+    _scheduleSearch(immediate: immediate);
   }
 
   void _scheduleSearch({bool immediate = false}) {
@@ -90,6 +114,14 @@ class _ChoixMedecinPageState extends State<ChoixMedecinPage> {
       return;
     }
     _searchDebounce = Timer(_searchDebounceDuration, _search);
+  }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _nameController.removeListener(_onSearchInputChanged);
+    _nameController.dispose();
+    super.dispose();
   }
 
   Future<void> _useMyLocation() async {
@@ -131,7 +163,7 @@ class _ChoixMedecinPageState extends State<ChoixMedecinPage> {
           _locationLoading = false;
           _locationError = null;
         });
-        _scheduleSearch(immediate: true);
+        _maybeAutoSearch(immediate: true);
       }
     } catch (e) {
       if (mounted) {
@@ -143,13 +175,6 @@ class _ChoixMedecinPageState extends State<ChoixMedecinPage> {
     }
   }
 
-  @override
-  void dispose() {
-    _searchDebounce?.cancel();
-    _nameController.removeListener(_onSearchInputChanged);
-    _nameController.dispose();
-    super.dispose();
-  }
 
   Future<void> _search() async {
     final currentRequestId = ++_searchRequestId;
@@ -364,8 +389,6 @@ class _ChoixMedecinPageState extends State<ChoixMedecinPage> {
     );
   }
 
-  bool get _usePosition => _userLat != null && _userLon != null;
-
   Widget _buildFilters() {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 22),
@@ -409,7 +432,9 @@ class _ChoixMedecinPageState extends State<ChoixMedecinPage> {
               hintText: 'Rechercher par nom',
             ),
             enabled: _allowName,
-            onFieldSubmitted: (_) => _scheduleSearch(immediate: true),
+            onFieldSubmitted: (_) {
+              if (_hasSearchCriteria) _search();
+            },
           ),
           const SizedBox(height: 18),
           if (_allowSpecialty) ...[
@@ -441,7 +466,7 @@ class _ChoixMedecinPageState extends State<ChoixMedecinPage> {
               onChanged: _allowSpecialty
                   ? (v) {
                       setState(() => _specialty = v);
-                      _scheduleSearch(immediate: true);
+                      _maybeAutoSearch(immediate: true);
                     }
                   : null,
             ),
@@ -473,7 +498,7 @@ class _ChoixMedecinPageState extends State<ChoixMedecinPage> {
               ],
               onChanged: (v) {
                 setState(() => _governorate = v);
-                _scheduleSearch(immediate: true);
+                _maybeAutoSearch(immediate: true);
               },
             ),
             const SizedBox(height: 22),
@@ -569,13 +594,35 @@ class _ChoixMedecinPageState extends State<ChoixMedecinPage> {
                   ),
             ),
           ],
+          const SizedBox(height: 18),
+          HeadsAppGradientButton(
+            label: 'Rechercher',
+            icon: Icons.search_rounded,
+            loading: _loading,
+            onPressed: (!_hasSearchCriteria || _loading) ? null : _search,
+          ),
         ],
       ),
     );
   }
 
   Widget _buildResultsSection() {
-    if (_loading && !_hasSearched) {
+    if (!_hasSearched) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 12),
+        child: Text(
+          'Saisissez au moins une lettre, choisissez une spécialité ou activez la localisation pour lancer la recherche.',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: _textGrey,
+                fontWeight: FontWeight.w500,
+                height: 1.45,
+              ),
+        ),
+      );
+    }
+
+    if (_loading) {
       return const Center(
         child: Padding(
           padding: EdgeInsets.symmetric(vertical: 48),
@@ -792,12 +839,7 @@ class _DoctorCard extends StatelessWidget {
               height: 4,
               decoration: const BoxDecoration(
                 borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                gradient: LinearGradient(
-                  colors: [
-                    Color(0xFFE8719A),
-                    Color(0xFF3B5998),
-                  ],
-                ),
+                gradient: HeadsAppColors.primaryButtonGradient,
               ),
             ),
             Padding(
@@ -951,12 +993,7 @@ class _DoctorCard extends StatelessWidget {
                   DecoratedBox(
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(999),
-                      gradient: const LinearGradient(
-                        colors: [
-                          Color(0xFFE8719A),
-                          Color(0xFF3B5998),
-                        ],
-                      ),
+                      gradient: HeadsAppColors.primaryButtonGradient,
                     ),
                     child: Material(
                       color: Colors.transparent,

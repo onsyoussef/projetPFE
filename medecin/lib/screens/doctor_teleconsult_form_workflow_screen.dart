@@ -961,29 +961,19 @@ class _DoctorTeleconsultFormDetailScreenState
     }
   }
 
-  Future<void> _decideForm(bool accept) async {
-    if (_busy) return;
-    setState(() => _busy = true);
+  Future<bool> _ensureFormAccepted() async {
+    final review = _data?['status']?.toString() ?? 'pending';
+    if (review != 'pending') return true;
     try {
       await ApiService.decideTeleconsultForm(
         formId: widget.formId,
         doctorId: widget.doctorId,
-        accept: accept,
+        accept: true,
       );
-      if (!mounted) return;
+      if (!mounted) return false;
       await _load();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              accept
-                  ? 'Formulaire accepté.'
-                  : 'Formulaire rejeté. Le patient est informé.',
-            ),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+      return mounted &&
+          (_data?['status']?.toString() ?? '') == 'accepted';
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -993,8 +983,7 @@ class _DoctorTeleconsultFormDetailScreenState
           ),
         );
       }
-    } finally {
-      if (mounted) setState(() => _busy = false);
+      return false;
     }
   }
 
@@ -1017,16 +1006,22 @@ class _DoctorTeleconsultFormDetailScreenState
     final patientName = readablePatientName(_data!['patientName']?.toString());
     final photo = _data!['patientPhotoPath']?.toString();
 
-    if (!mounted) return;
-    await DoctorTeleconsultAgendaScreen.showAsDialog(
-      context,
-      doctorId: widget.doctorId,
-      patientId: patientId,
-      patientName: patientName,
-      patientPhotoPath: photo,
-      formulaireId: widget.formId,
-    );
-    if (mounted) await _load();
+    setState(() => _busy = true);
+    try {
+      if (!await _ensureFormAccepted()) return;
+      if (!mounted) return;
+      await DoctorTeleconsultAgendaScreen.showAsDialog(
+        context,
+        doctorId: widget.doctorId,
+        patientId: patientId,
+        patientName: patientName,
+        patientPhotoPath: photo,
+        formulaireId: widget.formId,
+      );
+      if (mounted) await _load();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<Set<String>> _occupiedHoursForDate(
@@ -1225,6 +1220,8 @@ class _DoctorTeleconsultFormDetailScreenState
 
     setState(() => _busy = true);
     try {
+      if (!await _ensureFormAccepted()) return;
+      if (!mounted) return;
       await ApiService.patchTeleconsultFormWorkflow(
         formId: widget.formId,
         doctorId: widget.doctorId,
@@ -1284,58 +1281,9 @@ class _DoctorTeleconsultFormDetailScreenState
   }
 
   Widget _buildDetailBottomActions({
-    required bool needsDecision,
     required bool canWorkflow,
     required String review,
   }) {
-    if (needsDecision) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SizedBox(
-              height: 52,
-              child: FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: _ctaBlue,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-                onPressed: _busy ? null : () => _decideForm(true),
-                icon: const Icon(Icons.check_rounded),
-                label: const Text(
-                  'Accepter le dossier',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            SizedBox(
-              height: 52,
-              child: TextButton.icon(
-                style: TextButton.styleFrom(
-                  backgroundColor: const Color(0xFFF2F4F7),
-                  foregroundColor: HeadsAppColors.textPrimary,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-                onPressed: _busy ? null : () => _decideForm(false),
-                icon: const Icon(Icons.close_rounded),
-                label: const Text(
-                  'Rejeter',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
     if (canWorkflow) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -1428,8 +1376,8 @@ class _DoctorTeleconsultFormDetailScreenState
         .toLowerCase();
     final canManageScheduled =
         slot != null && slotStatus != 'annule' && slotStatus != 'termine';
-    final needsDecision = review == 'pending';
-    final canWorkflow = review == 'accepted' && wf == 'pending';
+    final canWorkflow =
+        (review == 'accepted' || review == 'pending') && wf == 'pending';
     final attachments = _data?['attachments'];
     final attList = attachments is List ? attachments : const [];
     final data = _data;
@@ -1670,8 +1618,7 @@ class _DoctorTeleconsultFormDetailScreenState
                                               ],
                                             ),
                                           ),
-                                        ] else if (!needsDecision &&
-                                            !canWorkflow &&
+                                        ] else if (!canWorkflow &&
                                             review != 'rejected') ...[
                                           const SizedBox(height: 16),
                                           _DetailSurfaceCard(
@@ -1692,7 +1639,6 @@ class _DoctorTeleconsultFormDetailScreenState
                                   ),
                                 ),
                                 _buildDetailBottomActions(
-                                  needsDecision: needsDecision,
                                   canWorkflow: canWorkflow,
                                   review: review,
                                 ),

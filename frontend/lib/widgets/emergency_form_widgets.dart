@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/emergency_symptoms_catalog.dart';
 import '../headsapp_theme.dart';
+import 'gradient_button.dart';
 
 const _pageBackground = Color(0xFFF5F7FA);
 const _navy = Color(0xFF1A3B5D);
@@ -24,7 +25,7 @@ class EmergencyFormColors {
   static const category = _categoryColor;
 }
 
-/// Bouton « Confirmer » en dégradé rose → bleu marine.
+/// Bouton « Confirmer » en dégradé rose → bleu.
 class EmergencyConfirmButton extends StatelessWidget {
   const EmergencyConfirmButton({
     super.key,
@@ -37,59 +38,10 @@ class EmergencyConfirmButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final enabled = onPressed != null && !loading;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(999),
-        gradient: enabled
-            ? const LinearGradient(
-                colors: [
-                  Color(0xFFE879A9),
-                  HeadsAppColors.brandPrimary,
-                ],
-              )
-            : null,
-        color: enabled ? null : HeadsAppColors.textTertiary.withValues(alpha: 0.35),
-        boxShadow: enabled
-            ? [
-                BoxShadow(
-                  color: HeadsAppColors.brandPrimary.withValues(alpha: 0.28),
-                  blurRadius: 20,
-                  offset: const Offset(0, 8),
-                ),
-              ]
-            : null,
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: enabled ? onPressed : null,
-          borderRadius: BorderRadius.circular(999),
-          child: SizedBox(
-            width: double.infinity,
-            height: HeadsAppMetrics.buttonHeight,
-            child: Center(
-              child: loading
-                  ? const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Text(
-                      'Confirmer',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-            ),
-          ),
-        ),
-      ),
+    return HeadsAppGradientButton(
+      label: 'Confirmer',
+      onPressed: onPressed,
+      loading: loading,
     );
   }
 }

@@ -215,8 +215,8 @@ class _NotificationCard extends StatelessWidget {
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          Color(0xFFB7A8D1),
-                          Color(0xFF4A89DC),
+                          HeadsAppColors.authGradientStart,
+                          HeadsAppColors.authGradientEnd,
                         ],
                       ),
                     ),
@@ -318,12 +318,7 @@ class _NouveauBadge extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
-        gradient: const LinearGradient(
-          colors: [
-            Color(0xFFB7A8D1),
-            Color(0xFF4A89DC),
-          ],
-        ),
+        gradient: HeadsAppColors.primaryButtonGradient,
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),

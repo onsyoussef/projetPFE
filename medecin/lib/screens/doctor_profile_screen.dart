@@ -557,14 +557,12 @@ class _DoctorProfileScreenState extends State<DoctorProfileScreen> {
                           ),
                           const SizedBox(height: 16),
                           AuthLabeledField(
-                            label: 'Hôpital ou clinique',
+                            label: 'Hôpital ou clinique (optionnel)',
                             labelUppercase: true,
                             labelColor: _labelColor,
                             child: TextFormField(
                               controller: _hospitalOrClinicController,
                               decoration: _fieldDecoration(hint: ''),
-                              validator: (v) =>
-                                  v == null || v.trim().isEmpty ? 'Requis' : null,
                             ),
                           ),
                           const SizedBox(height: 16),

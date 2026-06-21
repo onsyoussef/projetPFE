@@ -31,7 +31,6 @@ import 'widgets/call_log_bubble.dart';
 import 'widgets/chat_session_status_chip.dart';
 import 'widgets/doctor_chat_ui.dart';
 import 'widgets/prescription_form_sheet.dart';
-import 'screens/doctor_teleconsult_form_workflow_screen.dart';
 
 /// Niveau visuel médecin : `urgency` serveur ou repli sur `importance` (très important / important / normal).
 String doctorTextUrgencyFromPayload(Map<String, dynamic> payload) {
@@ -1718,7 +1717,9 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
       final type = msg['type'] as String? ?? '';
 
       if (_isDecisionMessage(msg)) continue;
-      // form_teleconsult : affiché dans le fil (carte avec pièces jointes).
+      if (type == 'form_teleconsult' || type == 'form_teleconsult_prompt') {
+        continue;
+      }
 
       final isTeleRequest = type == 'request_teleconsult';
       if (isTeleRequest && _hasDecisionAfterIndex(i)) continue;
@@ -1841,7 +1842,8 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
                                 ),
                               ),
                             ),
-                            const DoctorChatSecureNoticeCard(),
+                            if (_canSendMessages)
+                              const DoctorChatSecureNoticeCard(),
                             _buildInputBar(),
                           ],
                         ),
@@ -1856,24 +1858,6 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
     final type = msg['type'] as String? ?? 'text';
     final fromType = msg['fromType'] as String? ?? 'system';
 
-    if (type == 'form_teleconsult') {
-      final payload = msg['payload'];
-      final map = payload is Map
-          ? Map<String, dynamic>.from(payload)
-          : <String, dynamic>{};
-      final attachments = map['attachments'];
-      final attList = attachments is List ? attachments : const [];
-      return _FormTeleconsultChatCard(
-        formId: map['formId']?.toString() ?? '',
-        motif: map['motif']?.toString() ?? '',
-        symptomes: map['symptomes']?.toString() ?? '',
-        attachments: attList
-            .map((e) => Map<String, dynamic>.from(e as Map))
-            .toList(),
-        doctorId: widget.doctorId,
-        onReviewed: _load,
-      );
-    }
     if (type == 'request_teleconsult') {
       final payload = msg['payload'] as Map<String, dynamic>? ?? {};
       final motif = payload['motif'] as String? ?? '';
@@ -2065,17 +2049,16 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
 
   Widget _buildInputBar() {
     if (!_sessionClosed && !_canSendMessages) {
-      return Container(
-        color: Colors.white,
-        child: SafeArea(
-          top: false,
+      return SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
           child: Container(
             width: double.infinity,
-            margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
             padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
             decoration: BoxDecoration(
               color: const Color(0xFFE3F2FD),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(color: const Color(0xFF90CAF9)),
             ),
             child: const Row(
@@ -2089,7 +2072,7 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
                 SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'L’échange de messages n’est pas encore ouvert. Depuis le formulaire de téléconsultation du patient, choisissez « Répondre par message » pour activer le chat.',
+                    'L’échange de messages n’est pas encore ouvert. Depuis la liste des formulaires de téléconsultation, choisissez « Répondre par message » pour activer le chat.',
                     style: TextStyle(
                       fontSize: 13,
                       height: 1.45,
@@ -2353,248 +2336,6 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
                       : _openClotureDialog,
                 ),
               ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _FormTeleconsultChatCard extends StatefulWidget {
-  const _FormTeleconsultChatCard({
-    required this.formId,
-    required this.motif,
-    required this.symptomes,
-    required this.attachments,
-    required this.doctorId,
-    required this.onReviewed,
-  });
-
-  final String formId;
-  final String motif;
-  final String symptomes;
-  final List<Map<String, dynamic>> attachments;
-  final String doctorId;
-  final Future<void> Function() onReviewed;
-
-  @override
-  State<_FormTeleconsultChatCard> createState() =>
-      _FormTeleconsultChatCardState();
-}
-
-class _FormTeleconsultChatCardState extends State<_FormTeleconsultChatCard> {
-  List<Map<String, dynamic>> _attachments = const [];
-
-  @override
-  void initState() {
-    super.initState();
-    _attachments = widget.attachments;
-    _maybeFetchAttachments();
-  }
-
-  @override
-  void didUpdateWidget(covariant _FormTeleconsultChatCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.attachments.length != oldWidget.attachments.length ||
-        widget.attachments != oldWidget.attachments) {
-      setState(() => _attachments = widget.attachments);
-    }
-    if (_attachments.isEmpty && widget.formId.isNotEmpty) {
-      _maybeFetchAttachments();
-    }
-  }
-
-  Future<void> _maybeFetchAttachments() async {
-    if (widget.formId.isEmpty || _attachments.isNotEmpty) return;
-    try {
-      final data = await ApiService.getTeleconsultFormForDoctor(
-        formId: widget.formId,
-        doctorId: widget.doctorId,
-      );
-      if (!mounted) return;
-      final raw = data['attachments'];
-      if (raw is List && raw.isNotEmpty) {
-        setState(() {
-          _attachments = raw
-              .map((e) => Map<String, dynamic>.from(e as Map))
-              .toList();
-        });
-      }
-    } catch (_) {}
-  }
-
-  Future<void> _openDetail(BuildContext context) async {
-    if (widget.formId.isEmpty) return;
-    final changed = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(
-        builder: (_) => DoctorTeleconsultFormDetailScreen(
-          doctorId: widget.doctorId,
-          formId: widget.formId,
-        ),
-      ),
-    );
-    if (changed == true) {
-      await widget.onReviewed();
-    }
-  }
-
-  void _openAttachment(BuildContext context, Map<String, dynamic> att) {
-    final path = att['path']?.toString() ?? '';
-    final url = ApiService.resolveMediaUrl(path);
-    if (url.isEmpty) return;
-    final name = att['filename']?.toString() ?? 'Fichier';
-    final mimetype = att['mimetype']?.toString() ?? '';
-    final isImage =
-        _medecinChatAttachmentIsImage(mimetype, name, url);
-    _medecinOpenChatAttachmentFile(
-      context,
-      url,
-      name,
-      isImage: isImage,
-      mimetype: mimetype,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final preview = widget.symptomes.trim().isNotEmpty
-        ? widget.symptomes.trim()
-        : (widget.motif.trim().isNotEmpty
-            ? widget.motif.trim()
-            : 'Formulaire reçu');
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      color: const Color(0xFFE8F4FD),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: HeadsAppColors.brandPrimary.withValues(alpha: 0.35),
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                const Icon(
-                  Icons.assignment_rounded,
-                  color: HeadsAppColors.brandPrimary,
-                  size: 24,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Formulaire de téléconsultation',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: HeadsAppColors.textPrimary,
-                        ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text(
-              preview,
-              maxLines: 4,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: HeadsAppColors.textPrimary,
-                    height: 1.4,
-                  ),
-            ),
-            if (_attachments.isNotEmpty) ...[
-              const SizedBox(height: 14),
-              Text(
-                'PIÈCES JOINTES (${_attachments.length})',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.5,
-                      color: HeadsAppColors.textSecondary,
-                    ),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 88,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _attachments.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (context, i) {
-                    final att = _attachments[i];
-                    final name = att['filename']?.toString() ?? 'Fichier';
-                    final path = att['path']?.toString() ?? '';
-                    final url = ApiService.resolveMediaUrl(path);
-                    final mimetype = att['mimetype']?.toString() ?? '';
-                    final isImage = url.isNotEmpty &&
-                        _medecinChatAttachmentIsImage(mimetype, name, url);
-                    return Material(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      clipBehavior: Clip.antiAlias,
-                      child: InkWell(
-                        onTap: url.isEmpty
-                            ? null
-                            : () => _openAttachment(context, att),
-                        child: SizedBox(
-                          width: isImage ? 88 : 120,
-                          child: isImage
-                              ? Image.network(
-                                  url,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => const Center(
-                                    child: Icon(Icons.broken_image_outlined),
-                                  ),
-                                )
-                              : Padding(
-                                  padding: const EdgeInsets.all(8),
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      const Icon(
-                                        Icons.insert_drive_file_outlined,
-                                        color: HeadsAppColors.brandPrimary,
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        name,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        textAlign: TextAlign.center,
-                                        style: const TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-            const SizedBox(height: 14),
-            FilledButton.icon(
-              onPressed: widget.formId.isEmpty
-                  ? null
-                  : () => _openDetail(context),
-              icon: const Icon(Icons.fact_check_outlined, size: 20),
-              label: const Text('Consulter et décider'),
-              style: FilledButton.styleFrom(
-                backgroundColor: HeadsAppColors.brandPrimary,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
             ),
           ],
         ),

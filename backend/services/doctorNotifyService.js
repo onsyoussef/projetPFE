@@ -3,6 +3,10 @@ const Patient = require('../models/Patient');
 const { decrypt } = require('./cryptoService');
 const { emitToConversation, emitToUserId } = require('./realtimeGateway');
 const { sendPushToUser } = require('./pushNotificationService');
+const {
+  createAppNotification,
+  buildDoctorDedupeKey,
+} = require('./appNotificationService');
 
 async function loadConversationPatientContext(conversationId) {
   const conv = await Conversation.findById(conversationId)
@@ -87,6 +91,20 @@ async function notifyDoctorPushAndSocket({
     body: String(body || ''),
     data: pushData,
   });
+
+  try {
+    await createAppNotification({
+      recipientRole: 'doctor',
+      recipientId: doctorId,
+      type: String(eventType || 'doctor_notice'),
+      title,
+      body,
+      payload: socketPayload,
+      dedupeKey: buildDoctorDedupeKey(doctorId, eventType, socketPayload),
+    });
+  } catch (e) {
+    console.error('[NOTIFICATION] doctor persist', e);
+  }
 }
 
 async function notifyDoctorTeleconsultRequest({

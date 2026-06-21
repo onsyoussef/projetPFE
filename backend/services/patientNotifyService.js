@@ -1,5 +1,9 @@
 const { emitToUserId } = require('./realtimeGateway');
 const { sendPushToUser } = require('./pushNotificationService');
+const {
+  createAppNotification,
+  buildPatientDedupeKey,
+} = require('./appNotificationService');
 
 function stringifyPushData(payload = {}, pushType) {
   const pushData = { type: String(pushType || 'patient_notice') };
@@ -47,6 +51,21 @@ async function notifyPatientPushAndSocket({
     });
   } catch (e) {
     console.error('[PUSH] notifyPatientPushAndSocket', e);
+  }
+
+  try {
+    const notifType = String(pushType || socketEvent || 'patient_notice').replace(/^patient:/, '');
+    await createAppNotification({
+      recipientRole: 'patient',
+      recipientId: pid,
+      type: notifType,
+      title,
+      body,
+      payload: socketPayload,
+      dedupeKey: buildPatientDedupeKey(pid, notifType, socketPayload),
+    });
+  } catch (e) {
+    console.error('[NOTIFICATION] patient persist', e);
   }
 }
 

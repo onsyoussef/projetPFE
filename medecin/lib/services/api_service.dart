@@ -440,6 +440,50 @@ class ApiService {
     throw Exception(data['message'] ?? 'Erreur conversations');
   }
 
+  static Future<Map<String, dynamic>> getDoctorNotifications({
+    required String doctorId,
+    int limit = 50,
+  }) async {
+    final uri = Uri.parse(
+      '$_baseUrl/doctor/${Uri.encodeComponent(doctorId)}/notifications?limit=$limit',
+    );
+    final response = await http
+        .get(uri, headers: _jsonHeadersWithAuth())
+        .timeout(const Duration(seconds: 12));
+    final data = _decodeBody(response.body);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return data;
+    }
+    throw Exception(data['message'] ?? 'Erreur lors de la récupération des notifications');
+  }
+
+  static Future<void> markDoctorNotificationRead({
+    required String doctorId,
+    required String notificationId,
+  }) async {
+    final uri = Uri.parse(
+      '$_baseUrl/doctor/${Uri.encodeComponent(doctorId)}/notifications/${Uri.encodeComponent(notificationId)}/read',
+    );
+    final response = await http.patch(uri, headers: _jsonHeadersWithAuth());
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final data = _decodeBody(response.body);
+      throw Exception(data['message'] ?? 'Erreur lors de la mise à jour');
+    }
+  }
+
+  static Future<void> markAllDoctorNotificationsRead({
+    required String doctorId,
+  }) async {
+    final uri = Uri.parse(
+      '$_baseUrl/doctor/${Uri.encodeComponent(doctorId)}/notifications/read-all',
+    );
+    final response = await http.patch(uri, headers: _jsonHeadersWithAuth());
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final data = _decodeBody(response.body);
+      throw Exception(data['message'] ?? 'Erreur lors de la mise à jour');
+    }
+  }
+
   /// Patients en salle d’attente (persisté côté serveur, utile après redémarrage app).
   static Future<List<Map<String, dynamic>>> getDoctorWaitingRooms({
     required String doctorId,

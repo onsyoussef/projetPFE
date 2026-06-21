@@ -211,7 +211,7 @@ class _DoctorNotificationsSheetBodyState
                 }
               },
               child: const Text(
-                'Tout effacer',
+                'Tout marquer comme lu',
                 style: TextStyle(
                   color: _headerBlue,
                   fontWeight: FontWeight.w700,

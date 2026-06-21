@@ -264,12 +264,7 @@ class _AccessGrantedButton extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
-        gradient: const LinearGradient(
-          colors: [
-            Color(0xFFD4A5B5),
-            Color(0xFF4A89DC),
-          ],
-        ),
+        gradient: HeadsAppColors.primaryButtonGradient,
         boxShadow: [
           BoxShadow(
             color: HeadsAppColors.brandPrimary.withValues(alpha: 0.32),

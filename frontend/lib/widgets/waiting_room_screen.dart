@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../services/call_chat_context.dart';
 import '../services/permission_service.dart';
 import '../services/webrtc_service.dart';
+import '../headsapp_theme.dart';
 import '../utils/patient_ui_utils.dart';
 import '../utils/waiting_room_unload.dart';
 
@@ -321,15 +322,10 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen>
                 DecoratedBox(
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(999),
-                    gradient: const LinearGradient(
-                      colors: [
-                        Color(0xFFE8719A),
-                        Color(0xFF3B5998),
-                      ],
-                    ),
+                    gradient: HeadsAppColors.primaryButtonGradient,
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFF3B5998).withValues(alpha: 0.25),
+                        color: HeadsAppColors.authGradientEnd.withValues(alpha: 0.25),
                         blurRadius: 16,
                         offset: const Offset(0, 8),
                       ),

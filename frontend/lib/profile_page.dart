@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'headsapp_theme.dart';
 import 'services/api_service.dart';
 import 'utils/patient_ui_utils.dart';
+import 'widgets/gradient_button.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({
@@ -705,7 +706,9 @@ class _ProfilePageState extends State<ProfilePage> {
                       ],
                     ),
                     const SizedBox(height: 28),
-                    _SaveGradientButton(
+                    HeadsAppGradientButton(
+                      label: 'Enregistrer les modifications',
+                      icon: Icons.save_outlined,
                       loading: _savingProfile,
                       onPressed: _savingProfile ? null : _saveProfile,
                     ),
@@ -843,84 +846,6 @@ class _ProfileLabeledField extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _SaveGradientButton extends StatelessWidget {
-  const _SaveGradientButton({
-    required this.onPressed,
-    this.loading = false,
-  });
-
-  final VoidCallback? onPressed;
-  final bool loading;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(999),
-        gradient: onPressed == null
-            ? null
-            : const LinearGradient(
-                colors: [
-                  Color(0xFFE8719A),
-                  Color(0xFF3B5998),
-                ],
-              ),
-        color: onPressed == null ? const Color(0xFFE5E7EB) : null,
-        boxShadow: onPressed == null
-            ? null
-            : [
-                BoxShadow(
-                  color: HeadsAppColors.brandPrimary.withValues(alpha: 0.28),
-                  blurRadius: 18,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius: BorderRadius.circular(999),
-          child: SizedBox(
-            width: double.infinity,
-            height: HeadsAppMetrics.buttonHeight,
-            child: Center(
-              child: loading
-                  ? const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        color: Colors.white,
-                      ),
-                    )
-                  : Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.save_outlined,
-                          color: Colors.white,
-                          size: 22,
-                        ),
-                        const SizedBox(width: 10),
-                        Text(
-                          'Enregistrer les modifications',
-                          style:
-                              Theme.of(context).textTheme.titleSmall?.copyWith(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                        ),
-                      ],
-                    ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

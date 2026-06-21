@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../discussions_patient_page.dart';
+import '../headsapp_theme.dart';
 import '../utils/patient_ui_utils.dart';
 
 enum TeleconsultSentDialogKind { request, form }
@@ -65,12 +66,7 @@ Future<void> showTeleconsultSentDialog(
                     height: 76,
                     width: double.infinity,
                     decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Color(0xFFE8719A),
-                          Color(0xFF3B5998),
-                        ],
-                      ),
+                      gradient: HeadsAppColors.primaryButtonGradient,
                     ),
                   ),
                   Positioned(

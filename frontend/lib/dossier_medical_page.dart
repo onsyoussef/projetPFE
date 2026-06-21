@@ -846,15 +846,10 @@ class _DossierMedicalPageState extends State<DossierMedicalPage> {
         child: DecoratedBox(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
-            gradient: const LinearGradient(
-              colors: [
-                Color(0xFFE8719A),
-                Color(0xFF3B5998),
-              ],
-            ),
+            gradient: HeadsAppColors.primaryButtonGradient,
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF3B5998).withValues(alpha: 0.22),
+                color: HeadsAppColors.authGradientEnd.withValues(alpha: 0.22),
                 blurRadius: 14,
                 offset: const Offset(0, 6),
               ),

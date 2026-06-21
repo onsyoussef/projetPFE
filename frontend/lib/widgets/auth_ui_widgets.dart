@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../headsapp_theme.dart';
+import 'gradient_button.dart';
 
 const _authInputRadius = 14.0;
 const _authMaxWidth = 420.0;
@@ -334,7 +335,7 @@ class AuthPasswordRulesBox extends StatelessWidget {
   }
 }
 
-/// Bouton principal bleu plein, forme pilule (écran de connexion).
+/// Bouton principal (dégradé rose → bleu), forme pilule.
 class AuthSolidButton extends StatelessWidget {
   const AuthSolidButton({
     super.key,
@@ -349,56 +350,15 @@ class AuthSolidButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final enabled = onPressed != null && !loading;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(999),
-        color: enabled ? const Color(0xFF2459A8) : HeadsAppColors.textTertiary.withValues(alpha: 0.35),
-        boxShadow: enabled
-            ? [
-                BoxShadow(
-                  color: const Color(0xFF2459A8).withValues(alpha: 0.28),
-                  blurRadius: 16,
-                  offset: const Offset(0, 8),
-                ),
-              ]
-            : null,
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: enabled ? onPressed : null,
-          borderRadius: BorderRadius.circular(999),
-          child: SizedBox(
-            width: double.infinity,
-            height: HeadsAppMetrics.buttonHeight,
-            child: Center(
-              child: loading
-                  ? const SizedBox(
-                      height: 22,
-                      width: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : Text(
-                      label,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-            ),
-          ),
-        ),
-      ),
+    return HeadsAppGradientButton(
+      label: label,
+      onPressed: onPressed,
+      loading: loading,
     );
   }
 }
 
-/// Bouton principal en dégradé lavande → bleu, forme pilule.
+/// Bouton principal en dégradé rose → bleu, forme pilule.
 class AuthGradientButton extends StatelessWidget {
   const AuthGradientButton({
     super.key,
@@ -415,72 +375,11 @@ class AuthGradientButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final enabled = onPressed != null && !loading;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(999),
-        gradient: enabled
-            ? const LinearGradient(
-                colors: [
-                  HeadsAppColors.authGradientStart,
-                  HeadsAppColors.authGradientEnd,
-                ],
-              )
-            : null,
-        color: enabled ? null : HeadsAppColors.textTertiary.withValues(alpha: 0.35),
-        boxShadow: enabled
-            ? [
-                BoxShadow(
-                  color: HeadsAppColors.authGradientEnd.withValues(alpha: 0.35),
-                  blurRadius: 18,
-                  offset: const Offset(0, 8),
-                ),
-              ]
-            : null,
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: enabled ? onPressed : null,
-          borderRadius: BorderRadius.circular(999),
-          child: SizedBox(
-            width: double.infinity,
-            height: HeadsAppMetrics.buttonHeight,
-            child: Center(
-              child: loading
-                  ? const SizedBox(
-                      height: 22,
-                      width: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          label,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        if (showArrow) ...[
-                          const SizedBox(width: 8),
-                          const Icon(
-                            Icons.arrow_forward_rounded,
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                        ],
-                      ],
-                    ),
-            ),
-          ),
-        ),
-      ),
+    return HeadsAppGradientButton(
+      label: label,
+      onPressed: onPressed,
+      loading: loading,
+      showArrow: showArrow,
     );
   }
 }

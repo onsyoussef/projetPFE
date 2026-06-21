@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../chat_page.dart';
 import '../screens/doctor_profile_patient_page.dart';
 import '../services/api_service.dart';
+import '../headsapp_theme.dart';
 import '../utils/patient_ui_utils.dart';
 
 const _titleNavy = Color(0xFF1A458B);
@@ -203,15 +204,10 @@ class _GradientActionButton extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
-        gradient: const LinearGradient(
-          colors: [
-            Color(0xFFE8719A),
-            Color(0xFF3B5998),
-          ],
-        ),
+        gradient: HeadsAppColors.primaryButtonGradient,
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF3B5998).withValues(alpha: 0.22),
+            color: HeadsAppColors.authGradientEnd.withValues(alpha: 0.22),
             blurRadius: 14,
             offset: const Offset(0, 6),
           ),

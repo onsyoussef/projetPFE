@@ -180,7 +180,8 @@ class _AppBarConnectAction extends StatelessWidget {
       label: 'Se connecter',
       icon: Icons.bluetooth_rounded,
       foregroundColor: Colors.white,
-      backgroundColor: HeadsAppColors.brandPrimary,
+      backgroundColor: HeadsAppColors.authGradientEnd,
+      gradient: HeadsAppColors.primaryButtonGradient,
       onPressed: onConnect,
     );
   }
@@ -193,6 +194,7 @@ class _CompactHeaderButton extends StatelessWidget {
     required this.foregroundColor,
     required this.backgroundColor,
     required this.onPressed,
+    this.gradient,
   });
 
   final String label;
@@ -200,33 +202,41 @@ class _CompactHeaderButton extends StatelessWidget {
   final Color foregroundColor;
   final Color backgroundColor;
   final VoidCallback onPressed;
+  final Gradient? gradient;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Material(
-        color: backgroundColor,
-        borderRadius: BorderRadius.circular(20),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onPressed,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 18, color: foregroundColor),
-                const SizedBox(width: 6),
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: foregroundColor,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          gradient: gradient,
+          color: gradient == null ? backgroundColor : null,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onPressed,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 18, color: foregroundColor),
+                  const SizedBox(width: 6),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: foregroundColor,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

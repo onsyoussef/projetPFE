@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../headsapp_theme.dart';
 import '../services/api_service.dart';
 import '../utils/password_validator.dart';
+import '../widgets/gradient_button.dart';
 
 class PatientSecurityPage extends StatefulWidget {
   const PatientSecurityPage({
@@ -234,80 +235,12 @@ class _PatientSecurityPageState extends State<PatientSecurityPage> {
                 ),
               ),
               const SizedBox(height: 32),
-              _ConfirmGradientButton(
+              HeadsAppGradientButton(
                 label: 'Confirmer',
                 loading: _saving,
                 onPressed: _saving ? null : _submit,
               ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ConfirmGradientButton extends StatelessWidget {
-  const _ConfirmGradientButton({
-    required this.label,
-    required this.onPressed,
-    this.loading = false,
-  });
-
-  final String label;
-  final VoidCallback? onPressed;
-  final bool loading;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(999),
-        gradient: onPressed == null
-            ? null
-            : const LinearGradient(
-                colors: [
-                  Color(0xFFD4A5B5),
-                  Color(0xFF4A89DC),
-                ],
-              ),
-        color: onPressed == null ? const Color(0xFFE5E7EB) : null,
-        boxShadow: onPressed == null
-            ? null
-            : [
-                BoxShadow(
-                  color: HeadsAppColors.brandPrimary.withValues(alpha: 0.28),
-                  blurRadius: 18,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius: BorderRadius.circular(999),
-          child: SizedBox(
-            width: double.infinity,
-            height: HeadsAppMetrics.buttonHeight,
-            child: Center(
-              child: loading
-                  ? const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        color: Colors.white,
-                      ),
-                    )
-                  : Text(
-                      label,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                          ),
-                    ),
-            ),
           ),
         ),
       ),

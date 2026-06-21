@@ -14,11 +14,9 @@ import '../services/api_service.dart';
 import '../services/push_notification_service.dart';
 import '../services/webrtc_service.dart';
 import '../session_keys.dart';
-import '../utils/doctor_notification_dismiss_storage.dart';
+import '../utils/doctor_notifications_helper.dart';
 import '../utils/doctor_session_utils.dart';
 import '../utils/doctor_ui_utils.dart';
-import '../utils/doctor_waiting_room_dismiss_storage.dart';
-import '../widgets/doctor_notifications_sheet.dart';
 import '../widgets/headsapp_message_bubble_icon.dart';
 import '../widgets/headsapp_logo_text.dart';
 import 'doctor_inbox_screen.dart';
@@ -59,22 +57,18 @@ class _DoctorHomeScreenState extends State<DoctorHomeScreen>
   String _displayName = '';
   String? _photoPath;
   List<Map<String, dynamic>> _conversations = [];
-  /// conversationId → dernier `lastMessageAt` pris en compte quand le médecin a effacé / ouvert les notifs.
-  Map<String, String> _dismissedNotificationAtByConv = {};
-  /// Salle d’attente : conversationId → `enteredAtMs` de la session déjà vue / effacée.
-  Map<String, String> _dismissedWaitingSessionByConv = {};
   /// Patient actuellement en salle d’attente (événements socket).
   final Map<String, _WaitingRoomActive> _waitingByConv = {};
   StreamSubscription<Map<String, dynamic>>? _waitingRoomSub;
   StreamSubscription<Map<String, dynamic>>? _waitingLeftSub;
   StreamSubscription<Map<String, dynamic>>? _inboxNewMsgSub;
   StreamSubscription<Map<String, dynamic>>? _doctorNotifSub;
-  final List<_DoctorNotification> _alertNotifications = [];
   bool _loading = true;
   int _badgeDemande = 0;
   int _badgeForm = 0;
   /// Messages non lus (patient) — incrément socket, remis à jour par l’API, effacé à l’ouverture de l’inbox.
   int _inboxMessageBadge = 0;
+  int _notificationBadgeCount = 0;
   Timer? _badgePollTimer;
   late final AudioPlayer _notifPlayer;
   bool _notifSoundInFlight = false;
@@ -126,6 +120,15 @@ class _DoctorHomeScreenState extends State<DoctorHomeScreen>
     return n.clamp(0, 999);
   }
 
+  Future<void> _syncNotificationBadgeFromApi() async {
+    if (widget.doctorId.isEmpty) return;
+    try {
+      final count = await countDoctorNotifications(widget.doctorId);
+      if (!mounted) return;
+      setState(() => _notificationBadgeCount = count);
+    } catch (_) {}
+  }
+
   Future<void> _syncInboxBadgeFromApi() async {
     if (widget.doctorId.isEmpty) return;
     try {
@@ -164,6 +167,7 @@ class _DoctorHomeScreenState extends State<DoctorHomeScreen>
         _badgeDemande = req is Map ? nCount(req['pending']) : 0;
         _badgeForm = frm is Map ? nCount(frm['awaitingDoctorAction']) : 0;
       });
+      await _syncNotificationBadgeFromApi();
     } catch (_) {
       // Garde les compteurs affichés précédemment si l’API échoue.
     }
@@ -193,11 +197,6 @@ class _DoctorHomeScreenState extends State<DoctorHomeScreen>
         waitingItems =
             await ApiService.getDoctorWaitingRooms(doctorId: widget.doctorId);
       } catch (_) {}
-      final dismissed = await DoctorNotificationDismissStorage.getMap(
-        widget.doctorId,
-      );
-      final waitingDismissed =
-          await DoctorWaitingRoomDismissStorage.getMap(widget.doctorId);
       if (!mounted) return;
       setState(() {
         _displayName = readableDoctorName(
@@ -207,8 +206,6 @@ class _DoctorHomeScreenState extends State<DoctorHomeScreen>
         _photoPath = profile['photoPath']?.toString();
         _conversations = convList;
         _inboxMessageBadge = _sumInboxUnreadFromConversations(convList);
-        _dismissedNotificationAtByConv = dismissed;
-        _dismissedWaitingSessionByConv = waitingDismissed;
         _waitingByConv.clear();
         for (final w in waitingItems) {
           final cid = w['conversationId']?.toString() ?? '';
@@ -238,163 +235,6 @@ class _DoctorHomeScreenState extends State<DoctorHomeScreen>
     }
   }
 
-  Future<void> _persistDismissNotifications(
-    List<_DoctorNotification> list,
-  ) async {
-    if (widget.doctorId.isEmpty || list.isEmpty) return;
-    final convUpdates = <String, String>{};
-    final waitingUpdates = <String, String>{};
-    for (final n in list) {
-      if (n.waitingEnteredAt != null) {
-        waitingUpdates[n.conversationId] = '${n.waitingEnteredAt}';
-        continue;
-      }
-      for (final c in _conversations) {
-        if (c['conversationId']?.toString() == n.conversationId) {
-          convUpdates[n.conversationId] = notificationDismissSnapshotIso(c);
-          break;
-        }
-      }
-    }
-    if (convUpdates.isEmpty && waitingUpdates.isEmpty) return;
-    if (!mounted) return;
-    setState(() {
-      if (convUpdates.isNotEmpty) {
-        _dismissedNotificationAtByConv = {
-          ..._dismissedNotificationAtByConv,
-          ...convUpdates,
-        };
-      }
-      if (waitingUpdates.isNotEmpty) {
-        _dismissedWaitingSessionByConv = {
-          ..._dismissedWaitingSessionByConv,
-          ...waitingUpdates,
-        };
-      }
-    });
-    if (convUpdates.isNotEmpty) {
-      await DoctorNotificationDismissStorage.merge(widget.doctorId, convUpdates);
-    }
-    if (waitingUpdates.isNotEmpty) {
-      await DoctorWaitingRoomDismissStorage.merge(
-        widget.doctorId,
-        waitingUpdates,
-      );
-    }
-  }
-
-  bool _conversationQualifiesForDoctorNotification(
-    Map<String, dynamic> c,
-  ) {
-    if (c['urgenceFormulairePending'] == true) return false;
-    final lastType = c['lastMessageType']?.toString() ?? '';
-    final lastFrom = c['lastMessageFromType']?.toString() ?? '';
-    if (lastType != 'request_teleconsult' && lastType != 'form_teleconsult') {
-      return false;
-    }
-    return lastFrom == 'patient' || lastFrom == 'system';
-  }
-
-  String? _patientPhotoPathForConversation(String conversationId) {
-    for (final c in _conversations) {
-      if (c['conversationId']?.toString() == conversationId) {
-        return c['patientPhotoPath']?.toString();
-      }
-    }
-    return null;
-  }
-
-  List<_DoctorNotification> _visibleNotifications() {
-    final out = <_DoctorNotification>[];
-    for (final e in _waitingByConv.entries) {
-      final cid = e.key;
-      final w = e.value;
-      if (waitingRoomSessionDismissed(
-        cid,
-        w.enteredAtMs,
-        _dismissedWaitingSessionByConv,
-      )) {
-        continue;
-      }
-      out.add(
-        _DoctorNotification(
-          conversationId: cid,
-          title: 'Alerte Urgence — ${w.patientName}',
-          subtitle: 'Le patient est en attente de téléconsultation.',
-          patientName: w.patientName,
-          patientId: w.patientId ?? _patientIdForConversation(cid),
-          patientPhotoPath: _patientPhotoPathForConversation(cid),
-          waitingEnteredAt: w.enteredAtMs,
-          kind: DoctorNotificationVisualKind.urgent,
-          occurredAt: DateTime.fromMillisecondsSinceEpoch(w.enteredAtMs),
-        ),
-      );
-    }
-
-    for (final alert in _alertNotifications) {
-      out.add(alert);
-    }
-
-    for (final c in _conversations) {
-      final id = c['conversationId']?.toString() ?? '';
-      if (id.isEmpty) continue;
-      if (notificationDismissedForConversation(
-        c,
-        _dismissedNotificationAtByConv,
-      )) {
-        continue;
-      }
-      if (!_conversationQualifiesForDoctorNotification(c)) continue;
-
-      final name = readablePatientName(c['patientName']?.toString());
-      final last = c['lastMessage']?.toString() ?? '';
-      final lastType = c['lastMessageType']?.toString() ?? '';
-      final tags = conversationTags(c['tags']);
-      final occurredAt = DateTime.tryParse(
-        c['lastMessageAt']?.toString() ?? c['updatedAt']?.toString() ?? '',
-      );
-
-      final String title;
-      final String subtitle;
-      final DoctorNotificationVisualKind kind;
-      if (lastType == 'request_teleconsult') {
-        if (tags.contains('urgent')) {
-          kind = DoctorNotificationVisualKind.urgent;
-          title = 'Alerte Urgence — $name';
-          subtitle = last.isNotEmpty
-              ? last
-              : 'Intervention requise pour ce patient.';
-        } else {
-          kind = DoctorNotificationVisualKind.message;
-          title = 'Messages — $name';
-          subtitle = last.isNotEmpty
-              ? last
-              : '$name vous a envoyé une demande de téléconsultation.';
-        }
-      } else {
-        kind = DoctorNotificationVisualKind.analysis;
-        title = 'Analyses Reçues — $name';
-        subtitle = last.isNotEmpty
-            ? last
-            : 'Les résultats sont disponibles dans son dossier.';
-      }
-
-      out.add(
-        _DoctorNotification(
-          conversationId: id,
-          title: title,
-          subtitle: subtitle,
-          patientName: name,
-          patientId: c['patientId']?.toString(),
-          patientPhotoPath: c['patientPhotoPath']?.toString(),
-          kind: kind,
-          occurredAt: occurredAt,
-        ),
-      );
-    }
-    return out;
-  }
-
   Future<void> _refreshConversationsOnly() async {
     if (widget.doctorId.isEmpty) return;
     try {
@@ -411,39 +251,12 @@ class _DoctorHomeScreenState extends State<DoctorHomeScreen>
     switch (type) {
       case 'teleconsult_request':
       case 'teleconsult_form':
-        unawaited(_refreshConversationsOnly());
         unawaited(_refreshBadgesOnly());
+        unawaited(_syncNotificationBadgeFromApi());
         _playNotificationSound(isMessage: type == 'teleconsult_form');
         break;
       case 'blood_pressure_alert':
-        final patientName =
-            readablePatientName(data['patientName']?.toString());
-        final patientId = data['patientId']?.toString() ?? '';
-        final alertId = data['alertId']?.toString() ?? '';
-        final conversationId = data['conversationId']?.toString() ?? '';
-        final body = data['body']?.toString() ?? '';
-        setState(() {
-          _alertNotifications.removeWhere(
-            (n) => n.sheetId == 'bp-$alertId' || n.sheetId == 'bp-$patientId-$alertId',
-          );
-          _alertNotifications.insert(
-            0,
-            _DoctorNotification(
-              conversationId: conversationId.isNotEmpty
-                  ? conversationId
-                  : 'bp-$patientId',
-              title: 'Alerte tension — $patientName',
-              subtitle: body.isNotEmpty
-                  ? body
-                  : 'Nouvelle alerte tensiomètre pour ce patient.',
-              patientName: patientName,
-              patientId: patientId.isEmpty ? null : patientId,
-              kind: DoctorNotificationVisualKind.urgent,
-              occurredAt: DateTime.now(),
-              alertDismissId: alertId.isNotEmpty ? alertId : patientId,
-            ),
-          );
-        });
+        unawaited(_syncNotificationBadgeFromApi());
         _playNotificationSound();
         break;
       case 'waiting_room':
@@ -567,81 +380,14 @@ class _DoctorHomeScreenState extends State<DoctorHomeScreen>
   }
 
   Future<void> _openNotificationsPanel() async {
-    final nonWaiting = List<_DoctorNotification>.from(
-      _visibleNotifications().where((n) => !n.isWaitingRoom),
-    );
-    await _persistDismissNotifications(nonWaiting);
-    if (!mounted) return;
-
-    final visible = List<_DoctorNotification>.from(_visibleNotifications());
-    await showDoctorNotificationsSheet(
+    await showDoctorNotificationsPanel(
       context,
-      items: visible.map(_notificationToSheetItem).toList(),
-      onDismissItem: (item) async {
-        _DoctorNotification? match;
-        for (final n in _visibleNotifications()) {
-          if (n.sheetId == item.id) {
-            match = n;
-            break;
-          }
-        }
-        if (match != null) {
-          if (match.alertDismissId != null) {
-            setState(() {
-              _alertNotifications.removeWhere(
-                (n) => n.alertDismissId == match!.alertDismissId,
-              );
-            });
-          } else {
-            await _persistDismissNotifications([match]);
-          }
-        }
-        if (mounted) setState(() {});
-      },
-      onDismissAll: () async {
-        await _persistDismissNotifications(
-          List<_DoctorNotification>.from(
-            _visibleNotifications().where((n) => !n.isBloodPressureAlert),
-          ),
-        );
-        if (mounted) {
-          setState(() => _alertNotifications.clear());
-        }
-      },
+      doctorId: widget.doctorId,
     );
-    if (mounted) setState(() {});
-  }
-
-  DoctorNotificationSheetItem _notificationToSheetItem(_DoctorNotification n) {
-    return DoctorNotificationSheetItem(
-      id: n.sheetId,
-      kind: n.kind,
-      title: n.title,
-      subtitle: n.subtitle,
-      occurredAt: n.occurredAt,
-      dismissible: n.isWaitingRoom || n.isBloodPressureAlert,
-      onTap: n.isWaitingRoom
-          ? () {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (!mounted) return;
-                _openChatFromWaitingNotification(n);
-              });
-            }
-          : n.isBloodPressureAlert
-              ? () {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (!mounted) return;
-                    Navigator.of(context).push<void>(
-                      MaterialPageRoute<void>(
-                        builder: (_) => DoctorBloodPressureScreen(
-                          doctorId: widget.doctorId,
-                        ),
-                      ),
-                    );
-                  });
-                }
-              : null,
-    );
+    if (mounted) {
+      await _syncNotificationBadgeFromApi();
+      setState(() {});
+    }
   }
 
   void _openCategory(_DoctorHomeCategory cat) {
@@ -875,7 +621,7 @@ class _DoctorHomeScreenState extends State<DoctorHomeScreen>
   }
 
   Widget _buildNotificationsHeaderIcon() {
-    final notifCount = _visibleNotifications().length;
+    final notifCount = _notificationBadgeCount;
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -952,6 +698,7 @@ class _DoctorHomeScreenState extends State<DoctorHomeScreen>
     if (state == AppLifecycleState.resumed) {
       _refreshBadgesOnly();
       _syncInboxBadgeFromApi();
+      _syncNotificationBadgeFromApi();
       _syncWaitingRoomsFromServer();
     }
   }
@@ -980,42 +727,6 @@ class _DoctorHomeScreenState extends State<DoctorHomeScreen>
         }
       });
     } catch (_) {}
-  }
-
-  String? _patientIdForConversation(String conversationId) {
-    for (final c in _conversations) {
-      if (c['conversationId']?.toString() == conversationId) {
-        final p = c['patientId']?.toString();
-        if (p != null && p.isNotEmpty) return p;
-      }
-    }
-    return null;
-  }
-
-  void _openChatFromWaitingNotification(_DoctorNotification n) {
-    final pid = n.patientId ?? _patientIdForConversation(n.conversationId);
-    if (pid == null || pid.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Impossible d’ouvrir la discussion : patient introuvable pour cette conversation.',
-          ),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      return;
-    }
-    Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => ChatMedecinPage(
-          conversationId: n.conversationId,
-          patientId: pid,
-          patientName: n.patientName,
-          patientPhotoPath: n.patientPhotoPath,
-          doctorId: widget.doctorId,
-        ),
-      ),
-    );
   }
 
   @override
@@ -1198,44 +909,6 @@ class _WaitingRoomActive {
   final String patientName;
   final int enteredAtMs;
   final String? patientId;
-}
-
-class _DoctorNotification {
-  _DoctorNotification({
-    required this.conversationId,
-    required this.title,
-    required this.subtitle,
-    required this.patientName,
-    required this.kind,
-    this.patientId,
-    this.patientPhotoPath,
-    this.waitingEnteredAt,
-    this.occurredAt,
-    this.alertDismissId,
-  });
-
-  final String conversationId;
-  final String title;
-  final String subtitle;
-  final String patientName;
-  final String? patientId;
-  final String? patientPhotoPath;
-  final DoctorNotificationVisualKind kind;
-  final DateTime? occurredAt;
-  /// Si non null : notification « salle d’attente » (session identifiée par ce timestamp local).
-  final int? waitingEnteredAt;
-  final String? alertDismissId;
-
-  bool get isWaitingRoom => waitingEnteredAt != null;
-  bool get isBloodPressureAlert => alertDismissId != null;
-
-  String get sheetId {
-    if (isWaitingRoom) return 'wr-$conversationId-$waitingEnteredAt';
-    if (isBloodPressureAlert) {
-      return 'bp-${alertDismissId ?? conversationId}';
-    }
-    return 'conv-$conversationId';
-  }
 }
 
 /// Grande carte dashboard (hover + clic) pour mobile/web/desktop.

@@ -25,11 +25,16 @@ class HeadsAppColors {
   static const Color warning = Color(0xFFF59E0B);
   static const Color danger = Color(0xFFE14D65);
 
-  /// Écrans d'authentification (login, inscription, reset).
+  /// Dégradé boutons principaux (rose → bleu), aligné maquette Sécurité / Confirmer.
+  static const Color authGradientStart = Color(0xFFE8789B);
+  static const Color authGradientEnd = Color(0xFF3B67B0);
   static const Color authInputFill = Color(0xFFF3F4F6);
-  static const Color authGradientStart = Color(0xFFE57399);
-  static const Color authGradientEnd = Color(0xFF2C539E);
-  static const Color authInfoBackground = Color(0xFFEEF4FB);
+  static const Color authInfoBackground = Color(0xFFEEF6FF);
+  static const LinearGradient primaryButtonGradient = LinearGradient(
+    colors: [authGradientStart, authGradientEnd],
+    begin: Alignment.centerLeft,
+    end: Alignment.centerRight,
+  );
 }
 
 class HeadsAppMetrics {

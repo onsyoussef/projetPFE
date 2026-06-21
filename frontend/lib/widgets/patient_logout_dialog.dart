@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'gradient_button.dart';
+
 import '../headsapp_theme.dart';
 
 const _titleColor = Color(0xFF111827);
@@ -58,8 +60,9 @@ Future<bool> showPatientLogoutDialog(BuildContext context) async {
                     ),
               ),
               const SizedBox(height: 26),
-              _LogoutGradientButton(
+              HeadsAppGradientButton(
                 label: 'Annuler',
+                height: 52,
                 onPressed: () => Navigator.of(dialogContext).pop(false),
               ),
               const SizedBox(height: 12),
@@ -75,59 +78,6 @@ Future<bool> showPatientLogoutDialog(BuildContext context) async {
   );
   return result == true;
 }
-
-class _LogoutGradientButton extends StatelessWidget {
-  const _LogoutGradientButton({
-    required this.label,
-    required this.onPressed,
-  });
-
-  final String label;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(999),
-        gradient: const LinearGradient(
-          colors: [
-            Color(0xFFD4A5B5),
-            Color(0xFF4A89DC),
-          ],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: HeadsAppColors.brandPrimary.withValues(alpha: 0.28),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius: BorderRadius.circular(999),
-          child: SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: Center(
-              child: Text(
-                label,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _LogoutSecondaryButton extends StatelessWidget {
   const _LogoutSecondaryButton({
     required this.label,

@@ -8,6 +8,10 @@ const Message = require('../models/Message');
 const { emitToConversation, emitToUserId } = require('../services/realtimeGateway');
 const { sendPushToUser } = require('./pushNotificationService');
 const { stringifyPushData } = require('./patientNotifyService');
+const {
+  createAppNotification,
+  buildPatientDedupeKey,
+} = require('./appNotificationService');
 const { patientPhotoPathFromPopulated } = require('./utilsService');
 const { decrypt } = require('./cryptoService');
 const MOIS_FR_RDV = [
@@ -43,6 +47,19 @@ async function notifyPatientRdv(patientId, title, body, data = {}) {
       body: String(body || ''),
       data: stringifyPushData({ ...data, openChat: true }, 'rdv_update'),
     });
+    try {
+      await createAppNotification({
+        recipientRole: 'patient',
+        recipientId: pid,
+        type: 'rdv_update',
+        title,
+        body,
+        payload: socketPayload,
+        dedupeKey: buildPatientDedupeKey(pid, 'rdv_update', socketPayload),
+      });
+    } catch (persistErr) {
+      console.error('[NOTIFICATION] rdv persist', persistErr);
+    }
   } catch (e) {
     console.error('[RDV notify]', e);
   }

@@ -235,6 +235,7 @@ app.use('/', require('./routes/webrtcRoutes'));
 app.use('/', require('./routes/pushRoutes'));
 app.use('/', require('./routes/callSignalRoutes'));
 app.use('/', require('./routes/bloodPressureRoutes'));
+app.use('/', require('./routes/notificationRoutes'));
 
 app.use((err, req, res, next) => {
   console.error('Erreur middleware non gérée:', err);

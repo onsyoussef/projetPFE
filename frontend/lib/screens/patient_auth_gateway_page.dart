@@ -114,14 +114,7 @@ class PatientAuthGatewayPage extends StatelessWidget {
                         const Spacer(),
                         DecoratedBox(
                           decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [
-                                HeadsAppColors.brandPrimary,
-                                HeadsAppColors.brandAccent,
-                              ],
-                              begin: Alignment.centerLeft,
-                              end: Alignment.centerRight,
-                            ),
+                            gradient: HeadsAppColors.primaryButtonGradient,
                             borderRadius: BorderRadius.circular(16),
                           ),
                           child: SizedBox(

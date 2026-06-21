@@ -2631,41 +2631,38 @@ class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     // Tant que les deux conditions ne sont pas remplies (_canSendMessages == false),
     // on n'affiche QUE le message explicatif, pas le champ de saisie.
     if (!_canSendMessages) {
-      return Container(
-        color: Colors.white,
-        child: SafeArea(
-          top: false,
-          child: Container(
-            width: double.infinity,
-            margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
-            decoration: BoxDecoration(
-              color: const Color(0xFFE3F2FD),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-              border: Border.all(color: const Color(0xFF90CAF9)),
-            ),
-            child: const Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  Icons.info_outline_rounded,
-                  size: 20,
-                  color: Color(0xFF1A458B),
-                ),
-                SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Si votre demande est acceptée, complétez d’abord le formulaire de téléconsultation. L’échange de messages sera possible uniquement lorsque le médecin choisira « Répondre par message ».',
-                    style: TextStyle(
-                      fontSize: 13,
-                      height: 1.45,
-                      color: Color(0xFF1A458B),
-                      fontWeight: FontWeight.w500,
-                    ),
+      return SafeArea(
+        top: false,
+        child: Container(
+          width: double.infinity,
+          margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE3F2FD),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            border: Border.all(color: const Color(0xFF90CAF9)),
+          ),
+          child: const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.info_outline_rounded,
+                size: 20,
+                color: Color(0xFF1A458B),
+              ),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Si votre demande est acceptée, complétez d’abord le formulaire de téléconsultation. L’échange de messages sera possible uniquement lorsque le médecin choisira « Répondre par message ».',
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1.45,
+                    color: Color(0xFF1A458B),
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       );
@@ -2971,12 +2968,7 @@ class _QuestionPhysiqueCard extends StatelessWidget {
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(999),
-                    gradient: const LinearGradient(
-                      colors: [
-                        Color(0xFFE8719A),
-                        Color(0xFF3B5998),
-                      ],
-                    ),
+                    gradient: HeadsAppColors.primaryButtonGradient,
                   ),
                   child: Material(
                     color: Colors.transparent,
