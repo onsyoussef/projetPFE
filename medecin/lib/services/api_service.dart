@@ -1,9 +1,9 @@
 import 'dart:convert';
 
+import 'package:cross_file/cross_file.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'package:cross_file/cross_file.dart';
 
 import '../prescription_history/prescription_history_model.dart';
 
@@ -55,7 +55,9 @@ const List<String> kSpecialties = [
 class ApiService {
   static const String _apiBaseUrlFromEnv =
       String.fromEnvironment('API_BASE_URL', defaultValue: '');
-  static const String _defaultBaseUrl = 'https://telemedecine-99yr.onrender.com';
+  static const String _defaultWebBaseUrl = 'http://localhost:3000';
+  static const String _defaultMobileBaseUrl =
+      'https://telemedecine-99yr.onrender.com';
 
   static String get _baseUrl {
     final configured = _apiBaseUrlFromEnv.trim();
@@ -68,7 +70,7 @@ class ApiService {
       return true;
     }());
     if (configured.isNotEmpty) return configured;
-    return _defaultBaseUrl;
+    return kIsWeb ? _defaultWebBaseUrl : _defaultMobileBaseUrl;
   }
 
   static String get baseUrl => _baseUrl;
@@ -203,26 +205,46 @@ class ApiService {
     required String phone,
     String? orderNumber,
     String? country,
+    XFile? diploma,
   }) async {
     final uri = Uri.parse('$_baseUrl/auth/doctor/register');
-    final response = await http.post(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'fullName': fullName.trim(),
-        'email': email.trim(),
-        'password': password,
-        'specialty': specialty.trim(),
-        'governorate': governorate.trim(),
-        'address': address.trim(),
-        'phone': phone.replaceAll(' ', ''),
-        if (orderNumber != null && orderNumber.trim().isNotEmpty)
-          'orderNumber': orderNumber.trim(),
-        if (country != null && country.trim().isNotEmpty)
-          'country': country.trim(),
-      }),
-    );
+    final request = http.MultipartRequest('POST', uri);
+    request.fields['fullName'] = fullName.trim();
+    request.fields['email'] = email.trim();
+    request.fields['password'] = password;
+    request.fields['specialty'] = specialty.trim();
+    request.fields['governorate'] = governorate.trim();
+    request.fields['address'] = address.trim();
+    request.fields['phone'] = phone.replaceAll(' ', '');
+    if (orderNumber != null && orderNumber.trim().isNotEmpty) {
+      request.fields['orderNumber'] = orderNumber.trim();
+    }
+    if (country != null && country.trim().isNotEmpty) {
+      request.fields['country'] = country.trim();
+    }
+    if (diploma != null) {
+      if (kIsWeb) {
+        final bytes = await diploma.readAsBytes();
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            'diploma',
+            bytes,
+            filename: diploma.name,
+          ),
+        );
+      } else {
+        request.files.add(
+          await http.MultipartFile.fromPath(
+            'diploma',
+            diploma.path,
+            filename: diploma.name,
+          ),
+        );
+      }
+    }
 
+    final streamed = await request.send();
+    final response = await http.Response.fromStream(streamed);
     final data = _decodeBody(response.body);
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return data;
@@ -608,23 +630,6 @@ class ApiService {
     throw Exception(data['message'] ?? 'Réouverture impossible');
   }
 
-  /// Dernier formulaire d’urgence du patient (`GET /formulaire-urgence`).
-  static Future<Map<String, dynamic>?> getPatientFormulaireUrgence({
-    required String patientId,
-  }) async {
-    final uri = Uri.parse('$_baseUrl/formulaire-urgence').replace(
-      queryParameters: {'patientId': patientId},
-    );
-    final response = await http.get(uri, headers: _jsonHeadersWithAuth());
-    final data = _decodeBody(response.body);
-    if (response.statusCode >= 200 && response.statusCode < 300) {
-      final f = data['formulaire'];
-      if (f is Map) return Map<String, dynamic>.from(f);
-      return null;
-    }
-    throw Exception(data['message'] ?? 'Erreur formulaire urgence');
-  }
-
   /// URL du proxy fichier chat (PDF, etc.) ; ajouter `&download=1` pour forcer le téléchargement.
   static String attachmentProxyUrl({
     required String messageId,
@@ -894,18 +899,24 @@ class ApiService {
     required String doctorId,
     String? workingHoursStart,
     String? workingHoursEnd,
+    List<Map<String, String>>? workingTimeSlots,
     List<int>? availableDays,
     String? absenceMessage,
     bool? autoReplyEnabled,
+    bool? absenceEmergencyOnly,
   }) async {
     final uri = Uri.parse(
         '$_baseUrl/doctor/${Uri.encodeComponent(doctorId)}/settings');
     final body = <String, dynamic>{};
     if (workingHoursStart != null) body['workingHoursStart'] = workingHoursStart;
     if (workingHoursEnd != null) body['workingHoursEnd'] = workingHoursEnd;
+    if (workingTimeSlots != null) body['workingTimeSlots'] = workingTimeSlots;
     if (availableDays != null) body['availableDays'] = availableDays;
     if (absenceMessage != null) body['absenceMessage'] = absenceMessage;
     if (autoReplyEnabled != null) body['autoReplyEnabled'] = autoReplyEnabled;
+    if (absenceEmergencyOnly != null) {
+      body['absenceEmergencyOnly'] = absenceEmergencyOnly;
+    }
 
     final response = await http.patch(
       uri,
@@ -923,18 +934,45 @@ class ApiService {
     required String doctorId,
     String? workingHoursStart,
     String? workingHoursEnd,
+    List<Map<String, String>>? workingTimeSlots,
     List<int>? availableDays,
     String? absenceMessage,
     bool? autoReplyEnabled,
+    bool? absenceEmergencyOnly,
   }) {
     return patchDoctorSettings(
       doctorId: doctorId,
       workingHoursStart: workingHoursStart,
       workingHoursEnd: workingHoursEnd,
+      workingTimeSlots: workingTimeSlots,
       availableDays: availableDays,
       absenceMessage: absenceMessage,
       autoReplyEnabled: autoReplyEnabled,
+      absenceEmergencyOnly: absenceEmergencyOnly,
     );
+  }
+
+  static Future<Map<String, dynamic>> changeDoctorPassword({
+    required String doctorId,
+    required String oldPassword,
+    required String newPassword,
+  }) async {
+    final uri = Uri.parse(
+      '$_baseUrl/doctor/${Uri.encodeComponent(doctorId)}/change-password',
+    );
+    final response = await http.post(
+      uri,
+      headers: _jsonHeadersWithAuth(),
+      body: jsonEncode({
+        'oldPassword': oldPassword,
+        'newPassword': newPassword,
+      }),
+    );
+    final data = _decodeBody(response.body);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return data;
+    }
+    throw Exception(data['message'] ?? 'Erreur lors du changement de mot de passe.');
   }
 
   static Future<Map<String, dynamic>> patchDoctorStatus({
@@ -960,56 +998,6 @@ class ApiService {
     required String status,
   }) {
     return patchDoctorStatus(doctorId: doctorId, status: status);
-  }
-
-  /// Liste des formulaires d’urgence (patients du médecin).
-  static Future<List<Map<String, dynamic>>> getDoctorUrgenceFormulaires(
-      String doctorId) async {
-    final uri = Uri.parse(
-        '$_baseUrl/doctor/${Uri.encodeComponent(doctorId)}/urgence-formulaires');
-    final response = await http.get(uri, headers: _jsonHeadersWithAuth());
-    final data = _decodeBody(response.body);
-    if (response.statusCode >= 200 && response.statusCode < 300) {
-      final list = data['items'];
-      if (list is List) {
-        return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-      }
-      return [];
-    }
-    throw Exception(data['message'] ?? 'Erreur formulaires urgence');
-  }
-
-  static Future<Map<String, dynamic>> getUrgenceFormulaireForDoctor({
-    required String formId,
-    required String doctorId,
-  }) async {
-    final uri = Uri.parse(
-            '$_baseUrl/formulaire-urgence/${Uri.encodeComponent(formId)}/for-doctor')
-        .replace(queryParameters: {'doctorId': doctorId});
-    final response = await http.get(uri, headers: _jsonHeadersWithAuth());
-    final data = _decodeBody(response.body);
-    if (response.statusCode >= 200 && response.statusCode < 300) {
-      return data;
-    }
-    throw Exception(data['message'] ?? 'Détail introuvable');
-  }
-
-  static Future<Map<String, dynamic>> markUrgenceFormulaireConsulted({
-    required String formId,
-    required String doctorId,
-  }) async {
-    final uri = Uri.parse(
-        '$_baseUrl/formulaire-urgence/${Uri.encodeComponent(formId)}/mark-consulted');
-    final response = await http.patch(
-      uri,
-      headers: _jsonHeadersWithAuth(),
-      body: jsonEncode({'doctorId': doctorId}),
-    );
-    final data = _decodeBody(response.body);
-    if (response.statusCode >= 200 && response.statusCode < 300) {
-      return data;
-    }
-    throw Exception(data['message'] ?? 'Mise à jour impossible');
   }
 
   /// Statistiques téléconsultation (demandes / formulaires par statut).

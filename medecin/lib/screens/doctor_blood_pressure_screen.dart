@@ -8,9 +8,8 @@ import '../models/doctor_blood_pressure_measurement.dart';
 import '../models/doctor_patient_brief.dart';
 import '../providers/doctor_blood_pressure_provider.dart';
 
-const Color _bpPrimary = HeadsAppColors.brandPrimary;
-const Color _bpSurface = HeadsAppColors.surfaceAlt;
-const Color _bpText = HeadsAppColors.textPrimary;
+const Color _screenBg = Color(0xFFF5F9FC);
+const Color _headerBlue = Color(0xFF2459A8);
 
 class DoctorBloodPressureScreen extends StatefulWidget {
   const DoctorBloodPressureScreen({
@@ -46,56 +45,132 @@ class _DoctorBloodPressureScreenState extends State<DoctorBloodPressureScreen> {
       animation: _provider,
       builder: (context, _) {
         return Scaffold(
-          backgroundColor: _bpSurface,
-          appBar: AppBar(
-            title: const Text('Tensiomètre connecté'),
-          ),
-          body: _provider.loading
-              ? const Center(child: CircularProgressIndicator())
-              : RefreshIndicator(
-                  onRefresh: _provider.refresh,
-                  child: ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      _HubCard(
-                        title: 'Historiques',
-                        subtitle: 'Patients, mesures individuelles et graphe d’évolution',
-                        icon: Icons.history_rounded,
-                        color: const Color(0xFF2563EB),
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => _DoctorHistoriesPage(provider: _provider),
-                            ),
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      _HubCard(
-                        title: 'Alertes',
-                        subtitle: 'Alertes patients avec filtrage nom, prénom et date',
-                        icon: Icons.warning_amber_rounded,
-                        color: const Color(0xFFF97316),
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => _DoctorAlertsPage(provider: _provider),
-                            ),
-                          );
-                        },
-                      ),
-                      if (_provider.error != null) ...[
-                        const SizedBox(height: 14),
-                        Text(
-                          _provider.error!,
-                          style: const TextStyle(color: HeadsAppColors.warning, fontSize: 12),
+          backgroundColor: _screenBg,
+          body: SafeArea(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const _HeadsAppBackHeader(title: 'Tensiomètre connecté'),
+                Expanded(
+                  child: _provider.loading
+                      ? const Center(
+                          child: CircularProgressIndicator(
+                            color: HeadsAppColors.brandPrimary,
+                          ),
+                        )
+                      : RefreshIndicator(
+                          color: HeadsAppColors.brandPrimary,
+                          onRefresh: _provider.refresh,
+                          child: ListView(
+                            padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+                            children: [
+                              _HubCard(
+                                title: 'Historiques',
+                                subtitle:
+                                    'Patients, mesures individuelles et graphe d’évolution',
+                                icon: Icons.history_rounded,
+                                accentColor: HeadsAppColors.brandPrimary,
+                                gradientColors: const [
+                                  Color(0xFFF4F8FD),
+                                  Color(0xFFEEF6FF),
+                                ],
+                                onTap: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute<void>(
+                                      builder: (_) => _DoctorHistoriesPage(
+                                        provider: _provider,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                              const SizedBox(height: 14),
+                              _HubCard(
+                                title: 'Alertes',
+                                subtitle:
+                                    'Alertes patients avec filtrage nom, prénom et date',
+                                icon: Icons.warning_amber_rounded,
+                                accentColor: HeadsAppColors.warning,
+                                gradientColors: const [
+                                  Color(0xFFFFFBF5),
+                                  Color(0xFFFFF4E8),
+                                ],
+                                onTap: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute<void>(
+                                      builder: (_) => _DoctorAlertsPage(
+                                        provider: _provider,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                              if (_provider.error != null) ...[
+                                const SizedBox(height: 14),
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: HeadsAppColors.surface,
+                                    borderRadius: BorderRadius.circular(
+                                      HeadsAppMetrics.compactRadius,
+                                    ),
+                                    border: Border.all(
+                                      color: HeadsAppColors.warning
+                                          .withValues(alpha: 0.35),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    _provider.error!,
+                                    style: const TextStyle(
+                                      color: HeadsAppColors.warning,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
                         ),
-                      ],
-                    ],
-                  ),
                 ),
+              ],
+            ),
+          ),
         );
       },
+    );
+  }
+}
+
+class _HeadsAppBackHeader extends StatelessWidget {
+  const _HeadsAppBackHeader({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 8, 16, 8),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: () => Navigator.of(context).maybePop(),
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+            color: _headerBlue,
+          ),
+          Expanded(
+            child: Text(
+              title,
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: _headerBlue,
+                letterSpacing: -0.2,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -105,14 +180,16 @@ class _HubCard extends StatefulWidget {
     required this.title,
     required this.subtitle,
     required this.icon,
-    required this.color,
+    required this.accentColor,
+    required this.gradientColors,
     required this.onTap,
   });
 
   final String title;
   final String subtitle;
   final IconData icon;
-  final Color color;
+  final Color accentColor;
+  final List<Color> gradientColors;
   final VoidCallback onTap;
 
   @override
@@ -123,10 +200,10 @@ class _HubCardState extends State<_HubCard> {
   bool _hovered = false;
   bool _pressed = false;
 
+  bool get _active => _hovered || _pressed;
+
   @override
   Widget build(BuildContext context) {
-    final isCompact = MediaQuery.of(context).size.width < 380;
-    final scale = _pressed ? 0.98 : (_hovered ? 1.02 : 1.0);
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() {
@@ -139,65 +216,74 @@ class _HubCardState extends State<_HubCard> {
         onTapCancel: () => setState(() => _pressed = false),
         onTap: widget.onTap,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 220),
+          duration: const Duration(milliseconds: 200),
           curve: Curves.easeOutCubic,
-          transform: Matrix4.diagonal3Values(scale, scale, 1),
-          height: isCompact ? 116 : 132,
+          height: 118,
           width: double.infinity,
-          padding: EdgeInsets.all(isCompact ? 12 : 16),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [Colors.white, widget.color.withValues(alpha: _hovered ? 0.16 : 0.10)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
+              colors: widget.gradientColors,
             ),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: widget.color.withValues(alpha: 0.26)),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: widget.accentColor.withValues(alpha: _active ? 0.28 : 0.14),
+            ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: _hovered ? 0.12 : 0.08),
-                blurRadius: _hovered ? 18 : 10,
-                offset: const Offset(0, 6),
+                color: Colors.black.withValues(alpha: _active ? 0.1 : 0.05),
+                blurRadius: _active ? 18 : 10,
+                offset: Offset(0, _active ? 8 : 4),
               ),
             ],
           ),
           child: Row(
             children: [
               Container(
-                width: isCompact ? 42 : 48,
-                height: isCompact ? 42 : 48,
+                width: 48,
+                height: 48,
                 decoration: BoxDecoration(
-                  color: widget.color.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(12),
+                  color: HeadsAppColors.brandHighlight,
+                  borderRadius: BorderRadius.circular(14),
                 ),
-                child: Icon(widget.icon, color: widget.color, size: isCompact ? 20 : 24),
+                child: Icon(widget.icon, size: 24, color: widget.accentColor),
               ),
-              SizedBox(width: isCompact ? 10 : 12),
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
                       widget.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        fontSize: 17,
+                        fontSize: 16,
                         fontWeight: FontWeight.w800,
                         color: HeadsAppColors.textPrimary,
                       ),
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 4),
                     Text(
                       widget.subtitle,
-                      maxLines: isCompact ? 2 : 3,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: isCompact ? 12 : 13,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        height: 1.3,
                         color: HeadsAppColors.textSecondary,
                       ),
                     ),
                   ],
                 ),
+              ),
+              Icon(
+                Icons.arrow_forward_rounded,
+                color: widget.accentColor,
+                size: 20,
               ),
             ],
           ),
@@ -231,93 +317,102 @@ class _DoctorHistoriesPageState extends State<_DoctorHistoriesPage> {
   Widget build(BuildContext context) {
     final dateFmt = DateFormat('dd/MM/yyyy');
     return Scaffold(
-      backgroundColor: _bpSurface,
-      appBar: AppBar(
-        title: const Text('Historiques des patients'),
-        backgroundColor: _bpPrimary,
-        foregroundColor: Colors.white,
-      ),
-      body: AnimatedBuilder(
-        animation: widget.provider,
-        builder: (context, _) {
-          final patients = widget.provider.patients.where((p) {
-            final nom = p.lastName.toLowerCase();
-            final prenom = p.firstName.toLowerCase();
-            final nomQuery = _nomCtrl.text.trim().toLowerCase();
-            final prenomQuery = _prenomCtrl.text.trim().toLowerCase();
-            final nomOk = nomQuery.isEmpty || nom.contains(nomQuery);
-            final prenomOk = prenomQuery.isEmpty || prenom.contains(prenomQuery);
-            final date = _dateFilter;
-            final dateOk = date == null || widget.provider.measurements.any((m) {
-              if (m.patientId != p.id) return false;
-              return m.measuredAt.year == date.year &&
-                  m.measuredAt.month == date.month &&
-                  m.measuredAt.day == date.day;
-            });
-            return nomOk && prenomOk && dateOk;
-          }).toList();
+      backgroundColor: _screenBg,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const _HeadsAppBackHeader(title: 'Historiques des patients'),
+            Expanded(
+              child: AnimatedBuilder(
+                animation: widget.provider,
+                builder: (context, _) {
+                  final patients = widget.provider.patients.where((p) {
+                    final nom = p.lastName.toLowerCase();
+                    final prenom = p.firstName.toLowerCase();
+                    final nomQuery = _nomCtrl.text.trim().toLowerCase();
+                    final prenomQuery = _prenomCtrl.text.trim().toLowerCase();
+                    final nomOk = nomQuery.isEmpty || nom.contains(nomQuery);
+                    final prenomOk =
+                        prenomQuery.isEmpty || prenom.contains(prenomQuery);
+                    final date = _dateFilter;
+                    final dateOk = date == null ||
+                        widget.provider.measurements.any((m) {
+                          if (m.patientId != p.id) return false;
+                          return m.measuredAt.year == date.year &&
+                              m.measuredAt.month == date.month &&
+                              m.measuredAt.day == date.day;
+                        });
+                    return nomOk && prenomOk && dateOk;
+                  }).toList();
 
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              const _SectionHeader(
-                icon: Icons.history_rounded,
-                title: 'Historiques',
-                subtitle: 'Consultez les patients et leurs mesures tensionnelles.',
-              ),
-              const SizedBox(height: 10),
-              _FilterByNameDateCard(
-                nomCtrl: _nomCtrl,
-                prenomCtrl: _prenomCtrl,
-                dateFilter: _dateFilter,
-                dateFmt: dateFmt,
-                onChanged: () => setState(() {}),
-                onPickDate: () async {
-                  final now = DateTime.now();
-                  final picked = await showDatePicker(
-                    context: context,
-                    firstDate: DateTime(now.year - 2),
-                    lastDate: now,
-                    initialDate: _dateFilter ?? now,
-                  );
-                  if (picked != null && mounted) setState(() => _dateFilter = picked);
-                },
-                onReset: () {
-                  _nomCtrl.clear();
-                  _prenomCtrl.clear();
-                  setState(() => _dateFilter = null);
-                },
-              ),
-              const SizedBox(height: 12),
-              if (patients.isEmpty)
-                const _EmptyLine(text: 'Aucun patient trouvé.')
-              else
-                ...patients.map(
-                  (p) => Card(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    elevation: 0.8,
-                    child: ListTile(
-                      leading: const Icon(Icons.person_rounded, color: Color(0xFF4FA8D5)),
-                      title: Text(p.name),
-                      subtitle: Text('Prénom: ${p.firstName} • Nom: ${p.lastName}'),
-                      trailing: const Icon(Icons.chevron_right_rounded),
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => _PatientMeasurementsPage(
-                              provider: widget.provider,
-                              patient: p,
+                  return ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+                    children: [
+                      const _SectionHeader(
+                        icon: Icons.history_rounded,
+                        title: 'Historiques',
+                        subtitle:
+                            'Consultez les patients et leurs mesures tensionnelles.',
+                      ),
+                      const SizedBox(height: 12),
+                      _FilterByNameDateCard(
+                        nomCtrl: _nomCtrl,
+                        prenomCtrl: _prenomCtrl,
+                        dateFilter: _dateFilter,
+                        dateFmt: dateFmt,
+                        onChanged: () => setState(() {}),
+                        onPickDate: () async {
+                          final now = DateTime.now();
+                          final picked = await showDatePicker(
+                            context: context,
+                            firstDate: DateTime(now.year - 2),
+                            lastDate: now,
+                            initialDate: _dateFilter ?? now,
+                          );
+                          if (picked != null && mounted) {
+                            setState(() => _dateFilter = picked);
+                          }
+                        },
+                        onReset: () {
+                          _nomCtrl.clear();
+                          _prenomCtrl.clear();
+                          setState(() => _dateFilter = null);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      if (patients.isEmpty)
+                        const _EmptyLine(text: 'Aucun patient trouvé.')
+                      else
+                        ...patients.map(
+                          (p) => _SurfaceListTile(
+                            leading: Icon(
+                              Icons.person_rounded,
+                              color: HeadsAppColors.brandPrimary,
                             ),
+                            title: p.name,
+                            subtitle:
+                                'Prénom: ${p.firstName} • Nom: ${p.lastName}',
+                            trailing: const Icon(Icons.chevron_right_rounded),
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => _PatientMeasurementsPage(
+                                    provider: widget.provider,
+                                    patient: p,
+                                  ),
+                                ),
+                              );
+                            },
                           ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-            ],
-          );
-        },
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -348,70 +443,91 @@ class _DoctorAlertsPageState extends State<_DoctorAlertsPage> {
     final dateFmt = DateFormat('dd/MM/yyyy');
     final dateTimeFmt = DateFormat('dd/MM/yyyy • HH:mm');
     return Scaffold(
-      backgroundColor: _bpSurface,
-      appBar: AppBar(
-        title: const Text('Alertes des patients'),
-        backgroundColor: _bpPrimary,
-        foregroundColor: Colors.white,
-      ),
-      body: AnimatedBuilder(
-        animation: widget.provider,
-        builder: (context, _) {
-          final filtered = widget.provider.alerts.where((a) {
-            final parts = a.patientName.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
-            final firstName = parts.isEmpty ? '' : parts.first.toLowerCase();
-            final lastName = parts.length <= 1 ? '' : parts.sublist(1).join(' ').toLowerCase();
-            final nomQuery = _nomCtrl.text.trim().toLowerCase();
-            final prenomQuery = _prenomCtrl.text.trim().toLowerCase();
-            final nomOk = nomQuery.isEmpty || lastName.contains(nomQuery);
-            final prenomOk = prenomQuery.isEmpty || firstName.contains(prenomQuery);
-            final date = _dateFilter;
-            final dateOk = date == null ||
-                (a.createdAt.year == date.year &&
-                    a.createdAt.month == date.month &&
-                    a.createdAt.day == date.day);
-            return nomOk && prenomOk && dateOk;
-          }).toList();
+      backgroundColor: _screenBg,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const _HeadsAppBackHeader(title: 'Alertes des patients'),
+            Expanded(
+              child: AnimatedBuilder(
+                animation: widget.provider,
+                builder: (context, _) {
+                  final filtered = widget.provider.alerts.where((a) {
+                    final parts = a.patientName
+                        .trim()
+                        .split(RegExp(r'\s+'))
+                        .where((p) => p.isNotEmpty)
+                        .toList();
+                    final firstName =
+                        parts.isEmpty ? '' : parts.first.toLowerCase();
+                    final lastName = parts.length <= 1
+                        ? ''
+                        : parts.sublist(1).join(' ').toLowerCase();
+                    final nomQuery = _nomCtrl.text.trim().toLowerCase();
+                    final prenomQuery = _prenomCtrl.text.trim().toLowerCase();
+                    final nomOk = nomQuery.isEmpty || lastName.contains(nomQuery);
+                    final prenomOk =
+                        prenomQuery.isEmpty || firstName.contains(prenomQuery);
+                    final date = _dateFilter;
+                    final dateOk = date == null ||
+                        (a.createdAt.year == date.year &&
+                            a.createdAt.month == date.month &&
+                            a.createdAt.day == date.day);
+                    return nomOk && prenomOk && dateOk;
+                  }).toList();
 
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              const _SectionHeader(
-                icon: Icons.warning_amber_rounded,
-                title: 'Alertes',
-                subtitle: 'Surveillez les alertes critiques par patient.',
-              ),
-              const SizedBox(height: 10),
-              _FilterByNameDateCard(
-                nomCtrl: _nomCtrl,
-                prenomCtrl: _prenomCtrl,
-                dateFilter: _dateFilter,
-                dateFmt: dateFmt,
-                onChanged: () => setState(() {}),
-                onPickDate: () async {
-                  final now = DateTime.now();
-                  final picked = await showDatePicker(
-                    context: context,
-                    firstDate: DateTime(now.year - 2),
-                    lastDate: now,
-                    initialDate: _dateFilter ?? now,
+                  return ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+                    children: [
+                      const _SectionHeader(
+                        icon: Icons.warning_amber_rounded,
+                        title: 'Alertes',
+                        subtitle:
+                            'Surveillez les alertes critiques par patient.',
+                      ),
+                      const SizedBox(height: 12),
+                      _FilterByNameDateCard(
+                        nomCtrl: _nomCtrl,
+                        prenomCtrl: _prenomCtrl,
+                        dateFilter: _dateFilter,
+                        dateFmt: dateFmt,
+                        onChanged: () => setState(() {}),
+                        onPickDate: () async {
+                          final now = DateTime.now();
+                          final picked = await showDatePicker(
+                            context: context,
+                            firstDate: DateTime(now.year - 2),
+                            lastDate: now,
+                            initialDate: _dateFilter ?? now,
+                          );
+                          if (picked != null && mounted) {
+                            setState(() => _dateFilter = picked);
+                          }
+                        },
+                        onReset: () {
+                          _nomCtrl.clear();
+                          _prenomCtrl.clear();
+                          setState(() => _dateFilter = null);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      if (filtered.isEmpty)
+                        const _EmptyLine(text: 'Aucune alerte trouvée.')
+                      else
+                        ...filtered.map(
+                          (a) => _AlertTile(
+                            alert: a,
+                            dateTimeFmt: dateTimeFmt,
+                          ),
+                        ),
+                    ],
                   );
-                  if (picked != null && mounted) setState(() => _dateFilter = picked);
-                },
-                onReset: () {
-                  _nomCtrl.clear();
-                  _prenomCtrl.clear();
-                  setState(() => _dateFilter = null);
                 },
               ),
-              const SizedBox(height: 12),
-              if (filtered.isEmpty)
-                const _EmptyLine(text: 'Aucune alerte trouvée.')
-              else
-                ...filtered.map((a) => _AlertTile(alert: a, dateTimeFmt: dateTimeFmt)),
-            ],
-          );
-        },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -427,7 +543,8 @@ class _PatientMeasurementsPage extends StatefulWidget {
   final DoctorPatientBrief patient;
 
   @override
-  State<_PatientMeasurementsPage> createState() => _PatientMeasurementsPageState();
+  State<_PatientMeasurementsPage> createState() =>
+      _PatientMeasurementsPageState();
 }
 
 class _PatientMeasurementsPageState extends State<_PatientMeasurementsPage> {
@@ -442,44 +559,59 @@ class _PatientMeasurementsPageState extends State<_PatientMeasurementsPage> {
       ..sort((a, b) => b.measuredAt.compareTo(a.measuredAt));
 
     return Scaffold(
-      backgroundColor: _bpSurface,
-      appBar: AppBar(
-        title: Text('Mesures • ${widget.patient.name}'),
-        backgroundColor: _bpPrimary,
-        foregroundColor: Colors.white,
-        actions: [
-          TextButton.icon(
-            onPressed: () => setState(() => _showGraph = !_showGraph),
-            icon: const Icon(Icons.show_chart_rounded, color: Colors.white),
-            label: Text(
-              _showGraph ? 'Liste' : 'Graphe',
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
-            ),
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          const _SectionHeader(
-            icon: Icons.monitor_heart_rounded,
-            title: 'Mesures individuelles',
-            subtitle: 'Basculer entre liste et graphe via le bouton en haut.',
-          ),
-          const SizedBox(height: 10),
-          if (_showGraph)
-            _EvolutionChartCard(measurements: patientMeasures)
-          else if (patientMeasures.isEmpty)
-            const _EmptyLine(text: 'Aucune mesure pour ce patient.')
-          else
-            ...patientMeasures.map(
-              (m) => _MeasurementTile(
-                measurement: m,
-                dateTimeFmt: dateTimeFmt,
+      backgroundColor: _screenBg,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _HeadsAppBackHeader(title: 'Mesures • ${widget.patient.name}'),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => setState(() => _showGraph = !_showGraph),
+                  icon: Icon(
+                    _showGraph
+                        ? Icons.view_list_rounded
+                        : Icons.show_chart_rounded,
+                    size: 18,
+                  ),
+                  label: Text(_showGraph ? 'Liste' : 'Graphe'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: HeadsAppColors.brandPrimary,
+                    textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
               ),
             ),
-        ],
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                children: [
+                  const _SectionHeader(
+                    icon: Icons.monitor_heart_outlined,
+                    title: 'Mesures individuelles',
+                    subtitle:
+                        'Basculer entre liste et graphe via le bouton en haut.',
+                  ),
+                  const SizedBox(height: 12),
+                  if (_showGraph)
+                    _EvolutionChartCard(measurements: patientMeasures)
+                  else if (patientMeasures.isEmpty)
+                    const _EmptyLine(text: 'Aucune mesure pour ce patient.')
+                  else
+                    ...patientMeasures.map(
+                      (m) => _MeasurementTile(
+                        measurement: m,
+                        dateTimeFmt: dateTimeFmt,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -507,23 +639,17 @@ class _FilterByNameDateCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isCompact = MediaQuery.of(context).size.width < 420;
-    const borderColor = Color(0xFFD2E4F0);
-    const inputBorderColor = Color(0xFFB8CEDD);
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFFCFEFF), Color(0xFFF2F8FC)],
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: borderColor),
-        boxShadow: [
+        color: HeadsAppColors.surface,
+        borderRadius: BorderRadius.circular(HeadsAppMetrics.compactRadius),
+        border: Border.all(color: HeadsAppColors.border),
+        boxShadow: const [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            color: Color(0x0A000000),
+            blurRadius: 12,
+            offset: Offset(0, 4),
           ),
         ],
       ),
@@ -533,18 +659,22 @@ class _FilterByNameDateCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
-              color: _bpPrimary.withValues(alpha: 0.10),
+              color: HeadsAppColors.brandHighlight,
               borderRadius: BorderRadius.circular(999),
             ),
             child: const Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.tune_rounded, size: 14, color: _bpPrimary),
+                Icon(
+                  Icons.tune_rounded,
+                  size: 14,
+                  color: HeadsAppColors.brandPrimary,
+                ),
                 SizedBox(width: 6),
                 Text(
                   'Filtres',
                   style: TextStyle(
-                    color: _bpPrimary,
+                    color: HeadsAppColors.brandPrimary,
                     fontWeight: FontWeight.w700,
                     fontSize: 12,
                   ),
@@ -552,143 +682,173 @@ class _FilterByNameDateCard extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           isCompact
               ? Column(
                   children: [
-                    TextField(
+                    _FilterField(
                       controller: nomCtrl,
-                      onChanged: (_) => onChanged(),
-                      decoration: InputDecoration(
-                        labelText: 'Filtre Nom',
-                        prefixIcon: const Icon(Icons.badge_outlined, size: 20),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: inputBorderColor),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: _bpPrimary, width: 1.4),
-                        ),
-                        isDense: true,
-                        filled: true,
-                        fillColor: Colors.white,
-                      ),
+                      label: 'Filtre Nom',
+                      icon: Icons.badge_outlined,
+                      onChanged: onChanged,
                     ),
                     const SizedBox(height: 8),
-                    TextField(
+                    _FilterField(
                       controller: prenomCtrl,
-                      onChanged: (_) => onChanged(),
-                      decoration: InputDecoration(
-                        labelText: 'Filtre Prénom',
-                        prefixIcon: const Icon(Icons.person_outline_rounded, size: 20),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: inputBorderColor),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: _bpPrimary, width: 1.4),
-                        ),
-                        isDense: true,
-                        filled: true,
-                        fillColor: Colors.white,
-                      ),
+                      label: 'Filtre Prénom',
+                      icon: Icons.person_outline_rounded,
+                      onChanged: onChanged,
                     ),
                   ],
                 )
               : Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: nomCtrl,
-                  onChanged: (_) => onChanged(),
-                  decoration: InputDecoration(
-                    labelText: 'Filtre Nom',
-                    prefixIcon: const Icon(Icons.badge_outlined, size: 20),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
+                  children: [
+                    Expanded(
+                      child: _FilterField(
+                        controller: nomCtrl,
+                        label: 'Filtre Nom',
+                        icon: Icons.badge_outlined,
+                        onChanged: onChanged,
+                      ),
                     ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: inputBorderColor),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _FilterField(
+                        controller: prenomCtrl,
+                        label: 'Filtre Prénom',
+                        icon: Icons.person_outline_rounded,
+                        onChanged: onChanged,
+                      ),
                     ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: _bpPrimary, width: 1.4),
-                    ),
-                    isDense: true,
-                    filled: true,
-                    fillColor: Colors.white,
-                  ),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: TextField(
-                  controller: prenomCtrl,
-                  onChanged: (_) => onChanged(),
-                  decoration: InputDecoration(
-                    labelText: 'Filtre Prénom',
-                    prefixIcon: const Icon(Icons.person_outline_rounded, size: 20),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: inputBorderColor),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: _bpPrimary, width: 1.4),
-                    ),
-                    isDense: true,
-                    filled: true,
-                    fillColor: Colors.white,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
               OutlinedButton.icon(
                 onPressed: onPickDate,
-                icon: const Icon(Icons.date_range_rounded),
+                icon: const Icon(Icons.date_range_rounded, size: 18),
                 label: Text(
-                  dateFilter == null ? 'Filtrer par date' : dateFmt.format(dateFilter!),
+                  dateFilter == null
+                      ? 'Filtrer par date'
+                      : dateFmt.format(dateFilter!),
                 ),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF0B6990),
-                  side: const BorderSide(color: Color(0xFFA7C9DC)),
-                  backgroundColor: Colors.white,
+                  foregroundColor: HeadsAppColors.brandPrimary,
+                  side: const BorderSide(color: HeadsAppColors.border),
+                  backgroundColor: HeadsAppColors.surfaceMuted,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(999),
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
                 ),
               ),
               TextButton.icon(
                 onPressed: onReset,
-                icon: const Icon(Icons.refresh_rounded),
+                icon: const Icon(Icons.refresh_rounded, size: 18),
                 label: const Text('Réinitialiser'),
                 style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFF0B6990),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                  foregroundColor: HeadsAppColors.textSecondary,
                 ),
               ),
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _FilterField extends StatelessWidget {
+  const _FilterField({
+    required this.controller,
+    required this.label,
+    required this.icon,
+    required this.onChanged,
+  });
+
+  final TextEditingController controller;
+  final String label;
+  final IconData icon;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      onChanged: (_) => onChanged(),
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon, size: 20),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: HeadsAppColors.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(
+            color: HeadsAppColors.brandPrimary,
+            width: 1.4,
+          ),
+        ),
+        isDense: true,
+        filled: true,
+        fillColor: const Color(0xFFF2F4F7),
+      ),
+    );
+  }
+}
+
+class _SurfaceListTile extends StatelessWidget {
+  const _SurfaceListTile({
+    required this.leading,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.trailing,
+  });
+
+  final Widget leading;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: HeadsAppColors.surface,
+        borderRadius: BorderRadius.circular(HeadsAppMetrics.compactRadius),
+        border: Border.all(color: HeadsAppColors.border),
+      ),
+      child: ListTile(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(HeadsAppMetrics.compactRadius),
+        ),
+        leading: leading,
+        title: Text(
+          title,
+          style: const TextStyle(
+            fontWeight: FontWeight.w700,
+            color: HeadsAppColors.textPrimary,
+          ),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: const TextStyle(color: HeadsAppColors.textSecondary),
+        ),
+        trailing: trailing,
+        onTap: onTap,
       ),
     );
   }
@@ -705,29 +865,29 @@ class _MeasurementTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isCompact = MediaQuery.of(context).size.width < 380;
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      elevation: 0.8,
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: HeadsAppColors.surface,
+        borderRadius: BorderRadius.circular(HeadsAppMetrics.compactRadius),
+        border: Border.all(color: HeadsAppColors.border),
+      ),
       child: ListTile(
-        contentPadding: EdgeInsets.symmetric(
-          horizontal: isCompact ? 12 : 16,
-          vertical: isCompact ? 4 : 6,
-        ),
-        leading: Icon(
-          Icons.monitor_heart_rounded,
-          color: const Color(0xFF4FA8D5),
-          size: isCompact ? 21 : 24,
+        leading: const Icon(
+          Icons.monitor_heart_outlined,
+          color: HeadsAppColors.brandPrimary,
         ),
         title: Text(
           measurement.patientName,
-          style: TextStyle(fontSize: isCompact ? 14 : 15, fontWeight: FontWeight.w700),
+          style: const TextStyle(
+            fontWeight: FontWeight.w700,
+            color: HeadsAppColors.textPrimary,
+          ),
         ),
         subtitle: Text(
           '${dateTimeFmt.format(measurement.measuredAt)}\nPAS ${measurement.systolic} / PAD ${measurement.diastolic}'
           '${measurement.heartRate != null ? ' • FC ${measurement.heartRate}' : ''}',
-          style: TextStyle(fontSize: isCompact ? 12 : 13),
+          style: const TextStyle(color: HeadsAppColors.textSecondary),
         ),
         isThreeLine: true,
       ),
@@ -746,19 +906,18 @@ class _AlertTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isCompact = MediaQuery.of(context).size.width < 380;
-    final color = alert.isHypertension ? const Color(0xFFDC2626) : const Color(0xFFF59E0B);
+    final color =
+        alert.isHypertension ? HeadsAppColors.danger : HeadsAppColors.warning;
     final label = alert.isHypertension ? 'Hypertension' : 'Hypotension';
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      elevation: 0.8,
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: HeadsAppColors.surface,
+        borderRadius: BorderRadius.circular(HeadsAppMetrics.compactRadius),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
       child: ListTile(
-        contentPadding: EdgeInsets.symmetric(
-          horizontal: isCompact ? 12 : 16,
-          vertical: isCompact ? 4 : 6,
-        ),
-        leading: Icon(Icons.warning_amber_rounded, color: color, size: isCompact ? 21 : 24),
+        leading: Icon(Icons.warning_amber_rounded, color: color),
         title: Row(
           children: [
             Expanded(
@@ -766,11 +925,14 @@ class _AlertTile extends StatelessWidget {
                 '${alert.patientName} • ${alert.type}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: isCompact ? 14 : 15, fontWeight: FontWeight.w700),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: HeadsAppColors.textPrimary,
+                ),
               ),
             ),
             Container(
-              padding: EdgeInsets.symmetric(horizontal: isCompact ? 7 : 8, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
                 color: color.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(999),
@@ -778,7 +940,7 @@ class _AlertTile extends StatelessWidget {
               child: Text(
                 label,
                 style: TextStyle(
-                  fontSize: isCompact ? 10 : 11,
+                  fontSize: 11,
                   fontWeight: FontWeight.w700,
                   color: color,
                 ),
@@ -788,7 +950,7 @@ class _AlertTile extends StatelessWidget {
         ),
         subtitle: Text(
           'PAS ${alert.systolic} / PAD ${alert.diastolic}\n${dateTimeFmt.format(alert.createdAt)}',
-          style: TextStyle(fontSize: isCompact ? 12 : 13),
+          style: const TextStyle(color: HeadsAppColors.textSecondary),
         ),
         isThreeLine: true,
       ),
@@ -805,7 +967,9 @@ class _EvolutionChartCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isCompact = MediaQuery.of(context).size.width < 380;
     if (measurements.isEmpty) {
-      return const _EmptyLine(text: 'Pas assez de données pour afficher la courbe.');
+      return const _EmptyLine(
+        text: 'Pas assez de données pour afficher la courbe.',
+      );
     }
 
     final points = measurements.reversed.toList();
@@ -816,57 +980,79 @@ class _EvolutionChartCard extends StatelessWidget {
       diastolicSpots.add(FlSpot(i.toDouble(), points[i].diastolic.toDouble()));
     }
 
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      elevation: 0.8,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: SizedBox(
-          height: isCompact ? 210 : 240,
-          child: LineChart(
-            LineChartData(
-              minY: 40,
-              gridData: FlGridData(show: true, drawVerticalLine: false),
-              titlesData: FlTitlesData(
-                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                bottomTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    interval: points.length > 8 ? 2 : 1,
-                    getTitlesWidget: (value, meta) {
-                      final i = value.toInt();
-                      if (i < 0 || i >= points.length) return const SizedBox.shrink();
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Text(
-                          DateFormat('dd/MM').format(points[i].measuredAt),
-                          style: TextStyle(fontSize: isCompact ? 9 : 10),
-                        ),
-                      );
-                    },
-                  ),
-                ),
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: HeadsAppColors.surface,
+        borderRadius: BorderRadius.circular(HeadsAppMetrics.compactRadius),
+        border: Border.all(color: HeadsAppColors.border),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0A000000),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: SizedBox(
+        height: isCompact ? 210 : 240,
+        child: LineChart(
+          LineChartData(
+            minY: 40,
+            gridData: FlGridData(
+              show: true,
+              drawVerticalLine: false,
+              getDrawingHorizontalLine: (value) => FlLine(
+                color: HeadsAppColors.border.withValues(alpha: 0.8),
+                strokeWidth: 1,
               ),
-              borderData: FlBorderData(
-                show: true,
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              lineBarsData: [
-                LineChartBarData(
-                  spots: systolicSpots,
-                  color: const Color(0xFFDC2626),
-                  barWidth: 2.5,
-                  dotData: const FlDotData(show: false),
-                ),
-                LineChartBarData(
-                  spots: diastolicSpots,
-                  color: const Color(0xFF2563EB),
-                  barWidth: 2.5,
-                  dotData: const FlDotData(show: false),
-                ),
-              ],
             ),
+            titlesData: FlTitlesData(
+              rightTitles:
+                  const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              topTitles:
+                  const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              bottomTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  interval: points.length > 8 ? 2 : 1,
+                  getTitlesWidget: (value, meta) {
+                    final i = value.toInt();
+                    if (i < 0 || i >= points.length) {
+                      return const SizedBox.shrink();
+                    }
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        DateFormat('dd/MM').format(points[i].measuredAt),
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: HeadsAppColors.textSecondary,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+            borderData: FlBorderData(
+              show: true,
+              border: Border.all(color: HeadsAppColors.border),
+            ),
+            lineBarsData: [
+              LineChartBarData(
+                spots: systolicSpots,
+                color: HeadsAppColors.danger,
+                barWidth: 2.5,
+                dotData: const FlDotData(show: false),
+              ),
+              LineChartBarData(
+                spots: diastolicSpots,
+                color: HeadsAppColors.brandPrimary,
+                barWidth: 2.5,
+                dotData: const FlDotData(show: false),
+              ),
+            ],
           ),
         ),
       ),
@@ -887,48 +1073,44 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isCompact = MediaQuery.of(context).size.width < 380;
     return Container(
-      padding: EdgeInsets.all(isCompact ? 12 : 14),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFE0F2FE), Color(0xFFF8FCFF)],
-        ),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFBFDBFE)),
+        color: HeadsAppColors.surface,
+        borderRadius: BorderRadius.circular(HeadsAppMetrics.compactRadius),
+        border: Border.all(color: HeadsAppColors.border),
       ),
       child: Row(
         children: [
           Container(
-            width: isCompact ? 36 : 40,
-            height: isCompact ? 36 : 40,
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.95),
-              borderRadius: BorderRadius.circular(10),
+              color: HeadsAppColors.brandHighlight,
+              borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(icon, color: _bpPrimary, size: isCompact ? 19 : 22),
+            child: Icon(icon, color: HeadsAppColors.brandPrimary, size: 22),
           ),
-          SizedBox(width: isCompact ? 8 : 10),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   title,
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontWeight: FontWeight.w800,
-                    fontSize: isCompact ? 15 : 16,
-                    color: _bpText,
+                    fontSize: 16,
+                    color: HeadsAppColors.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   subtitle,
-                  style: TextStyle(
-                    fontSize: isCompact ? 11 : 12,
-                    color: const Color(0xFF475569),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: HeadsAppColors.textSecondary,
+                    height: 1.35,
                   ),
                 ),
               ],
@@ -947,13 +1129,19 @@ class _EmptyLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        color: HeadsAppColors.surface,
+        borderRadius: BorderRadius.circular(HeadsAppMetrics.compactRadius),
+        border: Border.all(color: HeadsAppColors.border),
       ),
-      child: Text(text),
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: HeadsAppColors.textSecondary,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
     );
   }
 }

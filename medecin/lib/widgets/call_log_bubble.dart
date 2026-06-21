@@ -45,20 +45,20 @@ class CallLogBubble extends StatelessWidget {
     late IconData icon;
 
     if (isMissed) {
-      accent = HeadsAppColors.warning;
-      bg = HeadsAppColors.warning.withValues(alpha: 0.10);
+      accent = const Color(0xFFEA580C);
+      bg = const Color(0xFFFFEDD5);
       icon = isVideo ? Icons.videocam_off_rounded : Icons.phone_missed_rounded;
     } else if (isRefused) {
       accent = HeadsAppColors.danger;
       bg = HeadsAppColors.danger.withValues(alpha: 0.10);
       icon = isVideo ? Icons.videocam_off_rounded : Icons.phone_disabled_rounded;
     } else if (isVideo) {
-      accent = HeadsAppColors.brandPrimary;
-      bg = HeadsAppColors.surfaceSoft;
+      accent = const Color(0xFF265AA6);
+      bg = Colors.white;
       icon = Icons.videocam_rounded;
     } else {
-      accent = HeadsAppColors.success;
-      bg = HeadsAppColors.success.withValues(alpha: 0.10);
+      accent = const Color(0xFF16A34A);
+      bg = const Color(0xFFDCFCE7);
       icon = Icons.phone_rounded;
     }
 
@@ -78,8 +78,8 @@ class CallLogBubble extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               color: bg,
-              borderRadius: BorderRadius.circular(HeadsAppMetrics.compactRadius),
-              border: Border.all(color: accent.withValues(alpha: 0.45), width: 1.2),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: accent.withValues(alpha: 0.5), width: 1.2),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,

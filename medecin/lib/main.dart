@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'espace_medecin_shell.dart';
 import 'headsapp_theme.dart';
 import 'login_page.dart';
-import 'screens/onboarding/onboarding_flow.dart';
+import 'screens/onboarding/doctor_onboarding_screen.dart';
 import 'services/api_service.dart';
 import 'services/onboarding_service.dart';
 import 'services/push_notification_service.dart';
@@ -23,7 +23,9 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('fr_FR');
   final hasSeenOnboarding = await OnboardingService.hasSeenOnboarding();
-  runApp(MedecinApp(initialRoute: hasSeenOnboarding ? '/home' : '/onboarding'));
+  runApp(MedecinApp(
+    initialRoute: hasSeenOnboarding ? '/home' : '/onboarding',
+  ));
 }
 
 class MedecinApp extends StatelessWidget {
@@ -70,7 +72,7 @@ class MedecinApp extends StatelessWidget {
       },
       initialRoute: initialRoute,
       routes: {
-        '/onboarding': (_) => const OnboardingFlow(),
+        '/onboarding': (_) => const DoctorOnboardingScreen(),
         '/home': (_) => const _SessionBootstrap(),
       },
     );

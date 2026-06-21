@@ -86,12 +86,9 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/onboarding/doctor_splash.png
-    - assets/onboarding/doctor_step1.png
-    - assets/onboarding/doctor_step2.png
-    - assets/onboarding/doctor_step3.png
-    - assets/onboarding/doctor_step4.png
-    - assets/onboarding/doctor_step5.png
+    - assets/images/headsapp_logo.png
+    - assets/images/chat_medical_pattern.png
+    - assets/onboarding/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

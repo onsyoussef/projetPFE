@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'headsapp_theme.dart';
 import 'providers/call_provider.dart' show CallProvider, CallState;
@@ -22,11 +23,15 @@ import 'services/api_service.dart';
 import 'services/call_chat_context.dart';
 import 'services/permission_service.dart';
 import 'services/webrtc_service.dart';
+import 'session_keys.dart';
 import 'teleconsult_first_request_letter.dart';
 import 'utils/chat_attachment_open.dart';
 import 'utils/doctor_ui_utils.dart';
 import 'widgets/call_log_bubble.dart';
+import 'widgets/chat_session_status_chip.dart';
+import 'widgets/doctor_chat_ui.dart';
 import 'widgets/prescription_form_sheet.dart';
+import 'screens/doctor_teleconsult_form_workflow_screen.dart';
 
 /// Niveau visuel médecin : `urgency` serveur ou repli sur `importance` (très important / important / normal).
 String doctorTextUrgencyFromPayload(Map<String, dynamic> payload) {
@@ -42,6 +47,14 @@ String doctorTextUrgencyFromPayload(Map<String, dynamic> payload) {
     default:
       return 'normal';
   }
+}
+
+String _doctorBubbleDisplayName(String fullName) {
+  final trimmed = fullName.trim();
+  if (trimmed.isEmpty) return 'Dr. —';
+  final lower = trimmed.toLowerCase();
+  if (lower.startsWith('dr.') || lower.startsWith('dr ')) return trimmed;
+  return 'Dr. $trimmed';
 }
 
 /// Chat médecin ↔ patient : texte (importance à l’envoi), pièces jointes, vocal,
@@ -72,9 +85,10 @@ class ChatMedecinPage extends StatefulWidget {
 class _ChatMedecinPageState extends State<ChatMedecinPage>
     with TickerProviderStateMixin {
   static const Color _skyBlue = HeadsAppColors.brandPrimary;
+  static const Color _headerNavy = Color(0xFF1A3D5F);
+  static const Color _onlineGreen = Color(0xFF22C55E);
 
   final List<Map<String, dynamic>> _messages = [];
-  Map<String, dynamic>? _formulaireUrgence;
   bool _loading = true;
   String? _error;
   final TextEditingController _textController = TextEditingController();
@@ -118,10 +132,17 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
   StreamSubscription<Map<String, dynamic>>? _chatTypingSub;
   StreamSubscription<Map<String, dynamic>>? _chatMessagesReadSub;
 
+  String _doctorDisplayName = 'Médecin';
+
   static const Color _clotureRed = HeadsAppColors.danger;
   static const Color _rouvrirGreen = HeadsAppColors.success;
   static const Color _sessionClosedBannerGreenBg = HeadsAppColors.surfaceSoft;
   static const Color _sessionClosedBannerGreenFg = HeadsAppColors.success;
+
+  static const Color _inputPlusBlue = Color(0xFF3B67A1);
+  static const Color _inputSendBlue = Color(0xFF204B9B);
+  static const Color _inputHintGrey = Color(0xFF7A8C9F);
+  static const Color _inputLockRed = Color(0xFFD65D66);
 
   bool get _doctorInActiveCall {
     final s = _callProvider.currentState;
@@ -289,6 +310,13 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
     );
     WebRtcService.instance.connectSocket(selfUserId: widget.doctorId);
     WebRtcService.instance.joinConversationRoom(widget.conversationId);
+    () async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final name = readableDoctorName(prefs.getString(kSessionDoctorNameKey));
+        if (mounted) setState(() => _doctorDisplayName = name);
+      } catch (_) {}
+    }();
     _callSummarySocketSub = WebRtcService.instance.callSummaryEvents.listen((
       data,
     ) async {
@@ -522,15 +550,6 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
       final futMessages = ApiService.getMessages(
         conversationId: widget.conversationId,
       );
-      Map<String, dynamic>? formulaire;
-      try {
-        formulaire = await ApiService.getPatientFormulaireUrgence(
-          patientId: widget.patientId,
-        );
-      } catch (_) {
-        formulaire = null;
-      }
-
       final bundle = await futMessages;
       final list =
           (bundle['messages'] as List?)
@@ -544,7 +563,6 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
           _messages.clear();
           _messages.addAll(list);
           _sessionClosed = ss == 'cloture';
-          _formulaireUrgence = formulaire;
           _loading = false;
         });
         _scrollToEnd();
@@ -626,62 +644,7 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
   }
 
   Future<void> _openClotureDialog() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          backgroundColor: Colors.white,
-          contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
-          titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
-          title: Column(
-            children: [
-              Icon(Icons.lock_outline_rounded, color: _clotureRed, size: 40),
-              const SizedBox(height: 12),
-              const Text(
-                'Clôturer la session',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
-              ),
-            ],
-          ),
-          content: const Text(
-            'Voulez-vous vraiment clôturer cette session de chat ?\n\n'
-            'Le patient ne pourra plus envoyer de messages après confirmation.',
-            style: TextStyle(color: Color(0xFF64748B), height: 1.35),
-          ),
-          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          actions: [
-            SizedBox(
-              height: 48,
-              child: OutlinedButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF64748B),
-                  side: BorderSide(color: Colors.grey.shade400),
-                  minimumSize: const Size(100, 48),
-                ),
-                child: const Text('Annuler'),
-              ),
-            ),
-            SizedBox(
-              height: 48,
-              child: FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                style: FilledButton.styleFrom(
-                  backgroundColor: _clotureRed,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(100, 48),
-                ),
-                child: const Text('Confirmer'),
-              ),
-            ),
-          ],
-        );
-      },
-    );
+    final ok = await showDoctorCloseDiscussionDialog(context);
     if (ok != true || !mounted) return;
     try {
       await ApiService.cloturerConversation(
@@ -704,62 +667,7 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
   }
 
   Future<void> _openRouvrirDialog() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          backgroundColor: Colors.white,
-          contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
-          titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
-          title: Column(
-            children: [
-              Icon(Icons.lock_open_rounded, color: _rouvrirGreen, size: 40),
-              const SizedBox(height: 12),
-              const Text(
-                'Réouvrir la session',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
-              ),
-            ],
-          ),
-          content: const Text(
-            'Voulez-vous réouvrir cette session de chat ?\n\n'
-            'Le patient pourra de nouveau envoyer des messages.',
-            style: TextStyle(color: Color(0xFF64748B), height: 1.35),
-          ),
-          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          actions: [
-            SizedBox(
-              height: 48,
-              child: OutlinedButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF64748B),
-                  side: BorderSide(color: Colors.grey.shade400),
-                  minimumSize: const Size(100, 48),
-                ),
-                child: const Text('Annuler'),
-              ),
-            ),
-            SizedBox(
-              height: 48,
-              child: FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                style: FilledButton.styleFrom(
-                  backgroundColor: _rouvrirGreen,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(100, 48),
-                ),
-                child: const Text('Confirmer'),
-              ),
-            ),
-          ],
-        );
-      },
-    );
+    final ok = await showDoctorReopenDiscussionDialog(context);
     if (ok != true || !mounted) return;
     try {
       await ApiService.rouvrirConversation(
@@ -803,7 +711,7 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
   }
 
   Future<void> _sendText() async {
-    if (_sessionClosed) return;
+    if (_sessionClosed || !_canSendMessages) return;
     final text = _textController.text.trim();
     if (text.isEmpty) return;
     if (_textSendInFlight) return;
@@ -838,7 +746,7 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
   }
 
   Future<void> _executePendingSend() async {
-    if (_sessionClosed) return;
+    if (_sessionClosed || !_canSendMessages) return;
     if (_pendingAttachmentFile != null) {
       try {
         await ApiService.uploadChatAttachment(
@@ -1594,6 +1502,7 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
     required String tooltip,
     required IconData icon,
     required VoidCallback? onPressed,
+    Color iconColor = _headerNavy,
   }) {
     final blink = _shouldBlinkCallIconsForRendezVous();
     return AnimatedBuilder(
@@ -1604,21 +1513,155 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
           opacity: opacity,
           child: IconButton(
             tooltip: tooltip,
-            icon: Icon(icon, color: Colors.white),
+            icon: Icon(icon, color: iconColor, size: 22),
             onPressed: onPressed,
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.all(8),
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
           ),
         );
       },
     );
   }
 
+  Widget _buildChatHeader() {
+    return Material(
+      color: Colors.white,
+      elevation: 0,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(2, 2, 4, 8),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+                color: _headerNavy,
+                onPressed: () => Navigator.of(context).maybePop(),
+              ),
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  patientAvatarForDoctor(
+                    name: widget.patientName,
+                    patientPhotoPath: widget.patientPhotoPath,
+                    radius: 20,
+                    backgroundColor: HeadsAppColors.brandHighlight,
+                    accentColor: _headerNavy,
+                  ),
+                  if (!_sessionClosed)
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        width: 11,
+                        height: 11,
+                        decoration: BoxDecoration(
+                          color: _onlineGreen,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      widget.patientName,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: HeadsAppColors.textPrimary,
+                      ),
+                    ),
+                    Text(
+                      _sessionClosed ? 'Session clôturée' : 'En ligne',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: _sessionClosed
+                            ? HeadsAppColors.textSecondary
+                            : _onlineGreen,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: _sessionClosed
+                    ? 'Session clôturée'
+                    : 'Rédiger une ordonnance',
+                icon: const Icon(Icons.medical_information_outlined, size: 22),
+                color: _headerNavy,
+                onPressed: _sessionClosed ? null : _openPrescriptionComposer,
+                visualDensity: VisualDensity.compact,
+              ),
+              IconButton(
+                tooltip: PrescriptionHistoryStrings.tooltipHistory,
+                icon: const Icon(Icons.history_rounded, size: 22),
+                color: _headerNavy,
+                onPressed: _openPrescriptionHistoryForDoctor,
+                visualDensity: VisualDensity.compact,
+              ),
+              _buildPulsingCallAction(
+                tooltip: 'Appel vidéo',
+                icon: Icons.videocam_outlined,
+                onPressed: _doctorInActiveCall ? null : _startVideoCall,
+              ),
+              _buildPulsingCallAction(
+                tooltip: 'Appel audio',
+                icon: Icons.call_outlined,
+                onPressed: _doctorInActiveCall ? null : _startAudioCall,
+              ),
+              IconButton(
+                tooltip: 'Informations',
+                icon: const Icon(Icons.more_vert_rounded, size: 22),
+                color: _headerNavy,
+                onPressed: _openConversationInfoPanel,
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   bool _isReplyByMessageMarker(Map<String, dynamic> msg) {
-    final payload = msg['payload'];
-    if (payload is Map<String, dynamic>) {
-      return payload['event'] == 'reply_by_message';
+    return _payloadEvent(msg) == 'reply_by_message';
+  }
+
+  String? _payloadEvent(Map<String, dynamic> m) {
+    final p = m['payload'];
+    if (p == null || p is! Map) return null;
+    final map = Map<String, dynamic>.from(p);
+    final ev = map['event'];
+    if (ev == null) return null;
+    return ev.toString();
+  }
+
+  bool get _canSendMessages {
+    if (_sessionClosed) return false;
+    int lastTeleIndex = -1;
+    for (var i = 0; i < _messages.length; i++) {
+      final m = _messages[i];
+      final type = m['type'] as String? ?? '';
+      final fromType = m['fromType'] as String? ?? '';
+      if (fromType == 'system' &&
+          (type == 'request_teleconsult' || type == 'form_teleconsult')) {
+        lastTeleIndex = i;
+      }
     }
-    if (payload is Map) {
-      return payload['event'] == 'reply_by_message';
+    if (lastTeleIndex == -1) return false;
+
+    for (var j = lastTeleIndex + 1; j < _messages.length; j++) {
+      if (_payloadEvent(_messages[j]) == 'reply_by_message') return true;
     }
     return false;
   }
@@ -1636,6 +1679,17 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
   }
 
   Future<void> _openPrescriptionComposer() async {
+    if (!_canSendMessages) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Choisissez « Répondre par message » depuis le formulaire de téléconsultation pour ouvrir l’échange.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
     await showDoctorPrescriptionFormBottomSheet(
       context,
       conversationId: widget.conversationId,
@@ -1664,10 +1718,9 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
       final type = msg['type'] as String? ?? '';
 
       if (_isDecisionMessage(msg)) continue;
-      if (type == 'chat_reopened') continue;
+      // form_teleconsult : affiché dans le fil (carte avec pièces jointes).
 
-      final isTeleRequest =
-          type == 'request_teleconsult' || type == 'form_teleconsult';
+      final isTeleRequest = type == 'request_teleconsult';
       if (isTeleRequest && _hasDecisionAfterIndex(i)) continue;
 
       out.add(msg);
@@ -1678,178 +1731,124 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: HeadsAppColors.brandPrimary,
-        foregroundColor: Colors.white,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          color: Colors.white,
-          onPressed: () => Navigator.of(context).maybePop(),
-        ),
-        titleSpacing: 0,
-        title: Row(
-          children: [
-            patientAvatarForDoctor(
-              name: widget.patientName,
-              patientPhotoPath: widget.patientPhotoPath,
-              radius: 18,
-              backgroundColor: HeadsAppColors.surface,
-              accentColor: _skyBlue,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    widget.patientName,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  Text(
-                    'Discussion',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.white.withValues(alpha: 0.88),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            IconButton(
-              tooltip: _sessionClosed
-                  ? 'Session clôturée'
-                  : 'Rédiger une ordonnance',
-              icon: const Icon(Icons.medical_information_rounded),
-              color: Colors.white,
-              onPressed: _sessionClosed ? null : _openPrescriptionComposer,
-            ),
-            IconButton(
-              tooltip: PrescriptionHistoryStrings.tooltipHistory,
-              icon: const Icon(Icons.history_rounded),
-              color: Colors.white,
-              onPressed: _openPrescriptionHistoryForDoctor,
-            ),
-          ],
-        ),
-        actions: [
-          _buildPulsingCallAction(
-            tooltip: 'Appel audio',
-            icon: Icons.call_rounded,
-            onPressed: _doctorInActiveCall ? null : _startAudioCall,
-          ),
-          _buildPulsingCallAction(
-            tooltip: 'Appel vidéo',
-            icon: Icons.videocam_rounded,
-            onPressed: _doctorInActiveCall ? null : _startVideoCall,
-          ),
-          IconButton(
-            tooltip: 'Informations',
-            icon: const Icon(Icons.info_outline_rounded),
-            onPressed: _openConversationInfoPanel,
-          ),
-        ],
-      ),
+      backgroundColor: const Color(0xFFE8ECF0),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: _skyBlue))
+          ? Column(
+              children: [
+                _buildChatHeader(),
+                const Expanded(
+                  child: Center(
+                    child: CircularProgressIndicator(color: _skyBlue),
+                  ),
+                ),
+              ],
+            )
           : _error != null
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+              ? Column(
                   children: [
-                    Icon(
-                      Icons.error_outline_rounded,
-                      size: 56,
-                      color: Colors.red.shade700,
+                    _buildChatHeader(),
+                    Expanded(
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.error_outline_rounded,
+                                size: 56,
+                                color: Colors.red.shade700,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                _error!,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: HeadsAppColors.danger,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              FilledButton.icon(
+                                onPressed: _load,
+                                icon: const Icon(Icons.refresh_rounded),
+                                label: const Text('Réessayer'),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: HeadsAppColors.brandPrimary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
-                    const SizedBox(height: 16),
-                    Text(
-                      _error!,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: HeadsAppColors.danger),
+                  ],
+                )
+              : Column(
+                  children: [
+                    _buildChatHeader(),
+                    _buildWaitingRoomTopBanners(),
+                    AnimatedCrossFade(
+                      duration: const Duration(milliseconds: 300),
+                      sizeCurve: Curves.easeOut,
+                      firstCurve: Curves.easeOut,
+                      secondCurve: Curves.easeOut,
+                      crossFadeState: _sessionClosed
+                          ? CrossFadeState.showFirst
+                          : CrossFadeState.showSecond,
+                      firstChild: Material(
+                        color: const Color(0xFFEEF2F6),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.check_circle_outline_rounded,
+                                color: _sessionClosedBannerGreenFg,
+                                size: 22,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  'Session clôturée ✅',
+                                  style: TextStyle(
+                                    color: _sessionClosedBannerGreenFg,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      secondChild: const SizedBox(width: double.infinity),
                     ),
-                    const SizedBox(height: 16),
-                    FilledButton.icon(
-                      onPressed: _load,
-                      icon: const Icon(Icons.refresh_rounded),
-                      label: const Text('Réessayer'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: HeadsAppColors.brandPrimary,
+                    Expanded(
+                      child: DoctorChatPatternBackground(
+                        child: Column(
+                          children: [
+                            Expanded(
+                              child: RefreshIndicator(
+                                color: _skyBlue,
+                                onRefresh: _load,
+                                child: ListView(
+                                  controller: _scrollController,
+                                  padding:
+                                      const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                                  children: _buildDatedMessageChildren(),
+                                ),
+                              ),
+                            ),
+                            const DoctorChatSecureNoticeCard(),
+                            _buildInputBar(),
+                          ],
+                        ),
                       ),
                     ),
                   ],
                 ),
-              ),
-            )
-          : Column(
-              children: [
-                _buildWaitingRoomTopBanners(),
-                AnimatedCrossFade(
-                  duration: const Duration(milliseconds: 300),
-                  sizeCurve: Curves.easeOut,
-                  firstCurve: Curves.easeOut,
-                  secondCurve: Curves.easeOut,
-                  crossFadeState: _sessionClosed
-                      ? CrossFadeState.showFirst
-                      : CrossFadeState.showSecond,
-                  firstChild: Material(
-                    color: _sessionClosedBannerGreenBg,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 10,
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.check_circle_outline_rounded,
-                            color: _sessionClosedBannerGreenFg,
-                            size: 22,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              'Session clôturée ✅',
-                              style: TextStyle(
-                                color: _sessionClosedBannerGreenFg,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  secondChild: const SizedBox(width: double.infinity),
-                ),
-                Expanded(
-                  child: RefreshIndicator(
-                    color: _skyBlue,
-                    onRefresh: _load,
-                    child: ListView(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.all(16),
-                      children: [
-                        if (_formulaireUrgence != null)
-                          _FormulaireUrgenceCard(
-                            formulaire: _formulaireUrgence!,
-                          ),
-                        if (_formulaireUrgence != null)
-                          const SizedBox(height: 16),
-                        ..._buildDatedMessageChildren(),
-                      ],
-                    ),
-                  ),
-                ),
-                _buildInputBar(),
-              ],
-            ),
     );
   }
 
@@ -1858,10 +1857,21 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
     final fromType = msg['fromType'] as String? ?? 'system';
 
     if (type == 'form_teleconsult') {
-      final payload = msg['payload'] as Map<String, dynamic>? ?? {};
-      return _FormulaireTeleconsultCard(
-        motif: payload['motif'] as String? ?? '',
-        symptomes: payload['symptomes'] as String? ?? '',
+      final payload = msg['payload'];
+      final map = payload is Map
+          ? Map<String, dynamic>.from(payload)
+          : <String, dynamic>{};
+      final attachments = map['attachments'];
+      final attList = attachments is List ? attachments : const [];
+      return _FormTeleconsultChatCard(
+        formId: map['formId']?.toString() ?? '',
+        motif: map['motif']?.toString() ?? '',
+        symptomes: map['symptomes']?.toString() ?? '',
+        attachments: attList
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList(),
+        doctorId: widget.doctorId,
+        onReviewed: _load,
       );
     }
     if (type == 'request_teleconsult') {
@@ -1925,18 +1935,10 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
       );
     }
     if (type == 'chat_closed') {
-      return _SessionClosedSystemLine(
-        text:
-            msg['content'] as String? ??
-            '🔒 La session a été clôturée par le médecin.',
-      );
+      return ChatSessionStatusChip(msg: msg, closed: true);
     }
     if (type == 'chat_reopened') {
-      return _SessionReopenedSystemLine(
-        text:
-            msg['content'] as String? ??
-            '🔓 La session a été réouverte par le médecin.',
-      );
+      return ChatSessionStatusChip(msg: msg, closed: false);
     }
     if (type == 'question_physique') {
       return _SystemBubble(
@@ -2031,27 +2033,95 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
       isDoctor: isDoctor,
       urgency: isDoctor ? doctorTextUrgencyFromPayload(payload) : null,
       readAt: readStr,
+      doctorDisplayName: _doctorDisplayName,
     );
   }
 
+  Widget _buildInputCircleButton({
+    required Widget icon,
+    required VoidCallback? onPressed,
+    Color backgroundColor = Colors.white,
+    String? tooltip,
+  }) {
+    Widget button = Material(
+      color: backgroundColor,
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onPressed,
+        customBorder: const CircleBorder(),
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Center(child: icon),
+        ),
+      ),
+    );
+    if (tooltip != null && tooltip.isNotEmpty) {
+      button = Tooltip(message: tooltip, child: button);
+    }
+    return button;
+  }
+
   Widget _buildInputBar() {
+    if (!_sessionClosed && !_canSendMessages) {
+      return Container(
+        color: Colors.white,
+        child: SafeArea(
+          top: false,
+          child: Container(
+            width: double.infinity,
+            margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE3F2FD),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              border: Border.all(color: const Color(0xFF90CAF9)),
+            ),
+            child: const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.info_outline_rounded,
+                  size: 20,
+                  color: Color(0xFF1A458B),
+                ),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'L’échange de messages n’est pas encore ouvert. Depuis le formulaire de téléconsultation du patient, choisissez « Répondre par message » pour activer le chat.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.45,
+                      color: Color(0xFF1A458B),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-      color: HeadsAppColors.surface,
+      padding: const EdgeInsets.fromLTRB(12, 6, 8, 10),
       child: SafeArea(
+        top: false,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (_peerTyping)
               Padding(
-                padding: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.only(bottom: 6, left: 4),
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
                     'Le patient est en train d\'écrire…',
                     style: TextStyle(
                       fontSize: 12,
-                      color: HeadsAppColors.textSecondary,
+                      color: _inputHintGrey,
                       fontStyle: FontStyle.italic,
                     ),
                   ),
@@ -2059,14 +2129,14 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
               ),
             if (_sessionClosed)
               Padding(
-                padding: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.only(bottom: 6, left: 4),
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
                     'Session clôturée — lecture seule',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
-                      color: HeadsAppColors.textSecondary,
+                      color: _inputHintGrey,
                     ),
                   ),
                 ),
@@ -2079,16 +2149,15 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
                   vertical: 8,
                 ),
                 decoration: BoxDecoration(
-                  color: HeadsAppColors.brandPrimary.withValues(alpha: 0.08),
+                  color: Colors.white,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: HeadsAppColors.border),
                 ),
                 child: Row(
                   children: [
                     const Icon(
                       Icons.attach_file_rounded,
                       size: 18,
-                      color: HeadsAppColors.brandPrimary,
+                      color: _inputPlusBlue,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
@@ -2124,16 +2193,15 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
                   vertical: 8,
                 ),
                 decoration: BoxDecoration(
-                  color: HeadsAppColors.brandPrimary.withValues(alpha: 0.08),
+                  color: Colors.white,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: HeadsAppColors.border),
                 ),
                 child: Row(
                   children: [
                     const Icon(
                       Icons.mic_rounded,
                       size: 18,
-                      color: HeadsAppColors.brandPrimary,
+                      color: _inputPlusBlue,
                     ),
                     const SizedBox(width: 8),
                     const Expanded(
@@ -2158,64 +2226,49 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
                   ],
                 ),
               ),
-            const SizedBox(height: 6),
             Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  margin: const EdgeInsets.only(right: 8),
-                  decoration: BoxDecoration(
-                    color: HeadsAppColors.brandPrimary.withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
-                  ),
-                  child: PopupMenuButton<String>(
+                Padding(
+                  padding: const EdgeInsets.only(right: 8, bottom: 2),
+                  child: _buildInputCircleButton(
                     tooltip: 'Ajouter une pièce jointe',
-                    enabled: !_sessionClosed,
-                    padding: EdgeInsets.zero,
-                    onSelected: (_) => _showAttachmentPickerMenu(),
-                    itemBuilder: (context) => const [
-                      PopupMenuItem<String>(
-                        value: 'attachment',
-                        child: ListTile(
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                          leading: Icon(Icons.attach_file_rounded),
-                          title: Text('Pièce jointe'),
-                        ),
-                      ),
-                    ],
-                    child: Icon(
+                    onPressed: _sessionClosed ? null : _showAttachmentPickerMenu,
+                    icon: Icon(
                       Icons.add_rounded,
-                      size: 20,
-                      color: _sessionClosed ? Colors.grey.shade500 : _skyBlue,
+                      size: 26,
+                      color: _sessionClosed
+                          ? _inputHintGrey.withValues(alpha: 0.6)
+                          : _inputPlusBlue,
                     ),
                   ),
                 ),
                 Expanded(
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(minHeight: 52),
+                    constraints: const BoxConstraints(minHeight: 48),
                     child: DecoratedBox(
                       decoration: BoxDecoration(
-                        color: _sessionClosed
-                            ? HeadsAppColors.surfaceMuted
-                            : HeadsAppColors.surfaceSoft,
-                        borderRadius: BorderRadius.circular(26),
-                        border: Border.all(color: HeadsAppColors.border),
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(28),
                       ),
                       child: TextField(
                         controller: _textController,
                         readOnly: _sessionClosed,
                         onChanged: _onTextChangedTyping,
+                        textInputAction: TextInputAction.send,
                         decoration: InputDecoration(
                           hintText: _sessionClosed
                               ? 'Session clôturée — lecture seule'
-                              : 'Répondre au patient…',
+                              : 'Répondre au patient...',
+                          hintStyle: const TextStyle(
+                            color: _inputHintGrey,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
                           border: InputBorder.none,
                           isDense: true,
                           contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
+                            horizontal: 18,
                             vertical: 14,
                           ),
                         ),
@@ -2227,54 +2280,64 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
                   ),
                 ),
                 const SizedBox(width: 8),
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: HeadsAppColors.surface,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: HeadsAppColors.border),
-                  ),
-                  child: IconButton(
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: _buildInputCircleButton(
+                    tooltip: _isRecording
+                        ? 'Arrêter l’enregistrement'
+                        : 'Message vocal',
                     onPressed: _sessionClosed
                         ? null
                         : (_isRecording
                               ? _stopAndSendRecording
                               : _startRecording),
-                    padding: EdgeInsets.zero,
-                    tooltip: _isRecording
-                        ? 'Arrêter l’enregistrement'
-                        : 'Message vocal',
                     icon: Icon(
                       _isRecording
                           ? Icons.stop_rounded
                           : Icons.mic_none_rounded,
-                      size: 19,
+                      size: 22,
+                      color: _isRecording
+                          ? _inputLockRed
+                          : _inputHintGrey,
                     ),
-                    color: _isRecording ? Colors.red : Colors.grey.shade700,
                   ),
                 ),
                 const SizedBox(width: 8),
                 CompositedTransformTarget(
                   key: _sendButtonKey,
                   link: _sendButtonLayerLink,
-                  child: SizedBox(
-                    width: 48,
-                    height: 48,
-                    child: IconButton.filled(
-                      onPressed: _sessionClosed
-                          ? null
-                          : _showSendImportanceOverlay,
-                      icon: const Icon(Icons.send_rounded, size: 22),
-                      style: IconButton.styleFrom(
-                        backgroundColor: _skyBlue,
-                        foregroundColor: Colors.white,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: Material(
+                      color: _sessionClosed
+                          ? _inputSendBlue.withValues(alpha: 0.45)
+                          : _inputSendBlue,
+                      shape: const CircleBorder(),
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        onTap: _sessionClosed
+                            ? null
+                            : _showSendImportanceOverlay,
+                        customBorder: const CircleBorder(),
+                        child: const SizedBox(
+                          width: 44,
+                          height: 44,
+                          child: Icon(
+                            Icons.send_rounded,
+                            size: 20,
+                            color: Colors.white,
+                          ),
+                        ),
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 4),
                 IconButton(
+                  padding: const EdgeInsets.all(8),
+                  constraints: const BoxConstraints(
+                    minWidth: 40,
+                    minHeight: 40,
+                  ),
                   tooltip: _sessionClosed
                       ? 'Réouvrir la session'
                       : 'Clôturer la session',
@@ -2282,7 +2345,8 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
                     _sessionClosed
                         ? Icons.lock_open_rounded
                         : Icons.lock_outline_rounded,
-                    color: _sessionClosed ? _rouvrirGreen : _clotureRed,
+                    color: _sessionClosed ? _rouvrirGreen : _inputLockRed,
+                    size: 22,
                   ),
                   onPressed: _sessionClosed
                       ? _openRouvrirDialog
@@ -2295,184 +2359,243 @@ class _ChatMedecinPageState extends State<ChatMedecinPage>
       ),
     );
   }
-
 }
 
-class _FormulaireUrgenceCard extends StatelessWidget {
-  const _FormulaireUrgenceCard({required this.formulaire});
+class _FormTeleconsultChatCard extends StatefulWidget {
+  const _FormTeleconsultChatCard({
+    required this.formId,
+    required this.motif,
+    required this.symptomes,
+    required this.attachments,
+    required this.doctorId,
+    required this.onReviewed,
+  });
 
-  final Map<String, dynamic> formulaire;
+  final String formId;
+  final String motif;
+  final String symptomes;
+  final List<Map<String, dynamic>> attachments;
+  final String doctorId;
+  final Future<void> Function() onReviewed;
 
   @override
-  Widget build(BuildContext context) {
-    final symptomes = formulaire['symptomes'] as List<dynamic>? ?? [];
-    final alerteAcceptee = formulaire['alerteAcceptee'] as bool? ?? false;
+  State<_FormTeleconsultChatCard> createState() =>
+      _FormTeleconsultChatCardState();
+}
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      color: HeadsAppColors.warning.withValues(alpha: 0.12),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: HeadsAppColors.warning.withValues(alpha: 0.45),
-          width: 1,
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(
-                  Icons.medical_information_rounded,
-                  color: HeadsAppColors.warning,
-                  size: 24,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Formulaire d\'urgence (patient)',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: HeadsAppColors.textPrimary,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Symptômes signalés :',
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: HeadsAppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: symptomes
-                  .map<Widget>(
-                    (s) => Chip(
-                      label: Text(
-                        s.toString(),
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                      backgroundColor: HeadsAppColors.warning.withValues(
-                        alpha: 0.2,
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                    ),
-                  )
-                  .toList(),
-            ),
-            if (alerteAcceptee) ...[
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Icon(
-                    Icons.info_outline_rounded,
-                    size: 16,
-                    color: HeadsAppColors.warning,
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'Le patient a pris connaissance de l\'alerte urgente.',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: HeadsAppColors.textPrimary,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ],
+class _FormTeleconsultChatCardState extends State<_FormTeleconsultChatCard> {
+  List<Map<String, dynamic>> _attachments = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _attachments = widget.attachments;
+    _maybeFetchAttachments();
+  }
+
+  @override
+  void didUpdateWidget(covariant _FormTeleconsultChatCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.attachments.length != oldWidget.attachments.length ||
+        widget.attachments != oldWidget.attachments) {
+      setState(() => _attachments = widget.attachments);
+    }
+    if (_attachments.isEmpty && widget.formId.isNotEmpty) {
+      _maybeFetchAttachments();
+    }
+  }
+
+  Future<void> _maybeFetchAttachments() async {
+    if (widget.formId.isEmpty || _attachments.isNotEmpty) return;
+    try {
+      final data = await ApiService.getTeleconsultFormForDoctor(
+        formId: widget.formId,
+        doctorId: widget.doctorId,
+      );
+      if (!mounted) return;
+      final raw = data['attachments'];
+      if (raw is List && raw.isNotEmpty) {
+        setState(() {
+          _attachments = raw
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList();
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _openDetail(BuildContext context) async {
+    if (widget.formId.isEmpty) return;
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => DoctorTeleconsultFormDetailScreen(
+          doctorId: widget.doctorId,
+          formId: widget.formId,
         ),
       ),
     );
+    if (changed == true) {
+      await widget.onReviewed();
+    }
   }
-}
 
-class _FormulaireTeleconsultCard extends StatelessWidget {
-  const _FormulaireTeleconsultCard({
-    required this.motif,
-    required this.symptomes,
-  });
-
-  final String motif;
-  final String symptomes;
+  void _openAttachment(BuildContext context, Map<String, dynamic> att) {
+    final path = att['path']?.toString() ?? '';
+    final url = ApiService.resolveMediaUrl(path);
+    if (url.isEmpty) return;
+    final name = att['filename']?.toString() ?? 'Fichier';
+    final mimetype = att['mimetype']?.toString() ?? '';
+    final isImage =
+        _medecinChatAttachmentIsImage(mimetype, name, url);
+    _medecinOpenChatAttachmentFile(
+      context,
+      url,
+      name,
+      isImage: isImage,
+      mimetype: mimetype,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final preview = widget.symptomes.trim().isNotEmpty
+        ? widget.symptomes.trim()
+        : (widget.motif.trim().isNotEmpty
+            ? widget.motif.trim()
+            : 'Formulaire reçu');
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      color: HeadsAppColors.surfaceSoft,
+      color: const Color(0xFFE8F4FD),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: HeadsAppColors.border, width: 1),
+        side: BorderSide(
+          color: HeadsAppColors.brandPrimary.withValues(alpha: 0.35),
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
               children: [
                 const Icon(
-                  Icons.description_rounded,
+                  Icons.assignment_rounded,
                   color: HeadsAppColors.brandPrimary,
                   size: 24,
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  'Formulaire de téléconsultation (patient)',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: HeadsAppColors.textPrimary,
+                Expanded(
+                  child: Text(
+                    'Formulaire de téléconsultation',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: HeadsAppColors.textPrimary,
+                        ),
                   ),
                 ),
               ],
             ),
-            if (motif.isNotEmpty) ...[
-              const SizedBox(height: 12),
+            const SizedBox(height: 10),
+            Text(
+              preview,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: HeadsAppColors.textPrimary,
+                    height: 1.4,
+                  ),
+            ),
+            if (_attachments.isNotEmpty) ...[
+              const SizedBox(height: 14),
               Text(
-                'Motif',
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: HeadsAppColors.textPrimary,
-                ),
+                'PIÈCES JOINTES (${_attachments.length})',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                      color: HeadsAppColors.textSecondary,
+                    ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                motif,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: HeadsAppColors.textPrimary,
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 88,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _attachments.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, i) {
+                    final att = _attachments[i];
+                    final name = att['filename']?.toString() ?? 'Fichier';
+                    final path = att['path']?.toString() ?? '';
+                    final url = ApiService.resolveMediaUrl(path);
+                    final mimetype = att['mimetype']?.toString() ?? '';
+                    final isImage = url.isNotEmpty &&
+                        _medecinChatAttachmentIsImage(mimetype, name, url);
+                    return Material(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        onTap: url.isEmpty
+                            ? null
+                            : () => _openAttachment(context, att),
+                        child: SizedBox(
+                          width: isImage ? 88 : 120,
+                          child: isImage
+                              ? Image.network(
+                                  url,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => const Center(
+                                    child: Icon(Icons.broken_image_outlined),
+                                  ),
+                                )
+                              : Padding(
+                                  padding: const EdgeInsets.all(8),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Icon(
+                                        Icons.insert_drive_file_outlined,
+                                        color: HeadsAppColors.brandPrimary,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        name,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
             ],
-            if (symptomes.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Text(
-                'Symptômes / description',
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: HeadsAppColors.textPrimary,
+            const SizedBox(height: 14),
+            FilledButton.icon(
+              onPressed: widget.formId.isEmpty
+                  ? null
+                  : () => _openDetail(context),
+              icon: const Icon(Icons.fact_check_outlined, size: 20),
+              label: const Text('Consulter et décider'),
+              style: FilledButton.styleFrom(
+                backgroundColor: HeadsAppColors.brandPrimary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                symptomes,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: HeadsAppColors.textPrimary,
-                ),
-              ),
-            ],
+            ),
           ],
         ),
       ),
@@ -2800,12 +2923,14 @@ class _TextBubble extends StatelessWidget {
   const _TextBubble({
     required this.content,
     required this.isDoctor,
-    required this.urgency,
+    required this.doctorDisplayName,
+    this.urgency,
     this.readAt,
   });
 
   final String content;
   final bool isDoctor;
+  final String doctorDisplayName;
 
   /// `urgent` | `medium` | `normal` — uniquement pour les messages médecin.
   final String? urgency;
@@ -2815,41 +2940,113 @@ class _TextBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final align = isDoctor ? CrossAxisAlignment.end : CrossAxisAlignment.start;
     final isRead = readAt != null && readAt!.trim().isNotEmpty;
+    final maxWidth = MediaQuery.of(context).size.width * 0.78;
 
-    final level = isDoctor ? (urgency ?? 'normal') : 'normal';
+    if (isDoctor) {
+      final level = urgency ?? 'normal';
 
-    late final Color doctorBg;
-    late final Color doctorBorder;
-    late final double borderWidth;
-    late final IconData badgeIcon;
-    late final String badgeText;
+      late final Color doctorBg;
+      late final Color doctorLeftBorder;
+      late final String? importanceTag;
 
-    switch (level) {
-      case 'urgent':
-        doctorBg = const Color(0xFFE1395F);
-        doctorBorder = const Color(0xFFB71C1C);
-        borderWidth = 2;
-        badgeIcon = Icons.priority_high_rounded;
-        badgeText = 'Très important';
-        break;
-      case 'medium':
-        doctorBg = const Color(0xFFFF9800);
-        doctorBorder = const Color(0xFFE65100);
-        borderWidth = 1.5;
-        badgeIcon = Icons.error_outline_rounded;
-        badgeText = 'Important';
-        break;
-      default:
-        doctorBg = const Color(0xFF16A34A);
-        doctorBorder = const Color(0xFF166534);
-        borderWidth = 1;
-        badgeIcon = Icons.check_circle_outline_rounded;
-        badgeText = 'Normal';
-        break;
+      switch (level) {
+        case 'urgent':
+          doctorBg = const Color(0xFFFFF5F5);
+          doctorLeftBorder = const Color(0xFFDC2626);
+          importanceTag = 'TRÈS IMPORTANT';
+          break;
+        case 'medium':
+          doctorBg = const Color(0xFFFFF7ED);
+          doctorLeftBorder = const Color(0xFFEA580C);
+          importanceTag = 'IMPORTANT';
+          break;
+        default:
+          doctorBg = const Color(0xFFF8FAFC);
+          doctorLeftBorder = const Color(0xFF22C55E);
+          importanceTag = null;
+          break;
+      }
+
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Column(
+          crossAxisAlignment: align,
+          children: [
+            if (importanceTag != null)
+              Container(
+                margin: const EdgeInsets.only(bottom: 6, right: 2),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: level == 'urgent'
+                      ? const Color(0xFFFCE7F3)
+                      : const Color(0xFFFFEDD5),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  importanceTag,
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
+                    color: level == 'urgent'
+                        ? const Color(0xFF991B1B)
+                        : const Color(0xFF9A3412),
+                  ),
+                ),
+              ),
+            Container(
+              constraints: BoxConstraints(maxWidth: maxWidth),
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              decoration: BoxDecoration(
+                color: doctorBg,
+                borderRadius: BorderRadius.circular(14),
+                border: Border(
+                  left: BorderSide(color: doctorLeftBorder, width: 5),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _doctorBubbleDisplayName(doctorDisplayName),
+                    style: const TextStyle(
+                      color: Color(0xFF1A458B),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13.5,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    content,
+                    style: const TextStyle(
+                      color: Color(0xFF111827),
+                      height: 1.4,
+                      fontSize: 14.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 4, right: 2),
+              child: Icon(
+                isRead ? Icons.done_all_rounded : Icons.done_rounded,
+                size: 15,
+                color: isRead ? const Color(0xFF4FA8D5) : Colors.grey.shade500,
+              ),
+            ),
+          ],
+        ),
+      );
     }
-
-    final bg = isDoctor ? doctorBg : const Color(0xFFE8F6FC);
-    final textColor = isDoctor ? Colors.white : const Color(0xFF2C3E50);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -2857,60 +3054,26 @@ class _TextBubble extends StatelessWidget {
         crossAxisAlignment: align,
         children: [
           Container(
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.78,
-            ),
+            constraints: BoxConstraints(maxWidth: maxWidth),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: bg,
-              borderRadius: BorderRadius.circular(16),
-              border: isDoctor
-                  ? Border.all(color: doctorBorder, width: borderWidth)
-                  : null,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (isDoctor)
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 6),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.22),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(badgeIcon, size: 14, color: Colors.white),
-                        const SizedBox(width: 4),
-                        Text(
-                          badgeText,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                Text(content, style: TextStyle(color: textColor, height: 1.25)),
-                if (isDoctor) ...[
-                  const SizedBox(height: 4),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: Icon(
-                      isRead ? Icons.done_all_rounded : Icons.done_rounded,
-                      size: 15,
-                      color: isRead ? Colors.white : Colors.white70,
-                    ),
-                  ),
-                ],
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: HeadsAppColors.border),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
               ],
+            ),
+            child: Text(
+              content,
+              style: const TextStyle(
+                color: Color(0xFF1A2740),
+                height: 1.25,
+              ),
             ),
           ),
         ],
@@ -2932,79 +3095,22 @@ class _DateSeparatorChip extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
           decoration: BoxDecoration(
-            color: Colors.grey.shade200,
+            color: Colors.white,
             borderRadius: BorderRadius.circular(999),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
           ),
           child: Text(
             label,
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: Colors.grey.shade800,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SessionClosedSystemLine extends StatelessWidget {
-  const _SessionClosedSystemLine({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Center(
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: HeadsAppColors.surfaceMuted,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            text,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 13,
               color: HeadsAppColors.textSecondary,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SessionReopenedSystemLine extends StatelessWidget {
-  const _SessionReopenedSystemLine({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Center(
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: HeadsAppColors.success.withValues(alpha: 0.14),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            text,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 13,
-              color: HeadsAppColors.success,
-              fontStyle: FontStyle.italic,
             ),
           ),
         ),

@@ -1,9 +1,12 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import 'headsapp_theme.dart';
 import 'services/api_service.dart';
 import 'utils/password_validator.dart';
-import 'widgets/headsapp_brand_widgets.dart';
+import 'widgets/auth_ui_widgets.dart';
 
 class SignupPage extends StatefulWidget {
   const SignupPage({super.key});
@@ -13,80 +16,220 @@ class SignupPage extends StatefulWidget {
 }
 
 class _SignupPageState extends State<SignupPage> {
-  final _formKey = GlobalKey<FormState>();
-  final TextEditingController _fullNameController = TextEditingController();
+  static const _totalSteps = 4;
+
+  /// TEMP — scan diplôme désactivé pour les tests. Remettre à `true` en prod.
+  static const _kDiplomaScanEnabled = false;
+
+  int get _progressTotal => _kDiplomaScanEnabled ? _totalSteps : _totalSteps - 1;
+
+  int get _progressStep {
+    if (!_kDiplomaScanEnabled && _step >= 2) return _step - 1;
+    return _step;
+  }
+
+  int _step = 0;
+  bool _isSubmitting = false;
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
+
+  final _step1Key = GlobalKey<FormState>();
+  final _step2Key = GlobalKey<FormState>();
+  final _step4Key = GlobalKey<FormState>();
+
+  final TextEditingController _firstNameController = TextEditingController();
+  final TextEditingController _lastNameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _addressController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _orderNumberController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _confirmPasswordController =
+      TextEditingController();
+
   String? _specialty;
   String? _governorate;
-  String _country = 'Tunisie';
-  bool _obscurePassword = true;
-
-  static const List<String> kCountries = [
-    'Tunisie',
-    'France',
-    'Belgique',
-    'Suisse',
-    'Algérie',
-    'Maroc',
-    'Italie',
-    'Canada',
-    'Royaume-Uni',
-  ];
+  XFile? _documentFile;
+  Uint8List? _documentPreview;
+  final String _country = 'Tunisie';
 
   @override
   void dispose() {
-    _fullNameController.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
     _emailController.dispose();
-    _passwordController.dispose();
-    _addressController.dispose();
     _phoneController.dispose();
     _orderNumberController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
 
+  String get _fullName =>
+      '${_firstNameController.text.trim()} ${_lastNameController.text.trim()}'
+          .trim();
+
+  int get _passwordStrength {
+    final pwd = _passwordController.text;
+    if (pwd.isEmpty) return 0;
+    var score = 0;
+    if (pwd.length >= 8) score++;
+    if (RegExp(r'[A-Z]').hasMatch(pwd)) score++;
+    if (RegExp(r'[a-z]').hasMatch(pwd)) score++;
+    if (RegExp(r'[0-9]').hasMatch(pwd)) score++;
+    if (RegExp(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\;/`~]').hasMatch(pwd)) {
+      score++;
+    }
+    return score.clamp(0, 4);
+  }
+
+  String get _passwordStrengthLabel {
+    switch (_passwordStrength) {
+      case 0:
+      case 1:
+        return 'FAIBLE';
+      case 2:
+        return 'MOYEN';
+      case 3:
+        return 'BON';
+      default:
+        return 'FORT';
+    }
+  }
+
+  bool _validateCurrentStep() {
+    switch (_step) {
+      case 0:
+        return _step1Key.currentState?.validate() ?? false;
+      case 1:
+        return _step2Key.currentState?.validate() ?? false;
+      case 2:
+        // Étape scan diplôme — désactivée pour tests (_kDiplomaScanEnabled).
+        if (!_kDiplomaScanEnabled) return true;
+        if (_documentFile == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Veuillez scanner votre document professionnel.'),
+            ),
+          );
+          return false;
+        }
+        return true;
+      case 3:
+        return _step4Key.currentState?.validate() ?? false;
+      default:
+        return false;
+    }
+  }
+
+  void _nextStep() {
+    if (!_validateCurrentStep()) return;
+    if (_step < _totalSteps - 1) {
+      setState(() {
+        var next = _step + 1;
+        if (!_kDiplomaScanEnabled && next == 2) next = 3;
+        _step = next;
+      });
+      return;
+    }
+    _onSignup();
+  }
+
+  void _previousStep() {
+    if (_step > 0) {
+      setState(() {
+        var prev = _step - 1;
+        if (!_kDiplomaScanEnabled && prev == 2) prev = 1;
+        _step = prev;
+      });
+    } else {
+      Navigator.of(context).maybePop();
+    }
+  }
+
+  Future<void> _pickDocument() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Appareil photo'),
+              onTap: () => Navigator.pop(context, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Galerie'),
+              onTap: () => Navigator.pop(context, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+
+    final picker = ImagePicker();
+    final file = await picker.pickImage(source: source, imageQuality: 85);
+    if (file == null) return;
+    await _setDocument(file);
+  }
+
+  Future<void> _setDocument(XFile file) async {
+    final bytes = await file.readAsBytes();
+    if (!mounted) return;
+    setState(() {
+      _documentFile = file;
+      _documentPreview = bytes;
+    });
+  }
+
+  void _removeDocument() {
+    setState(() {
+      _documentFile = null;
+      _documentPreview = null;
+    });
+  }
+
   void _onSignup() {
-    if (!_formKey.currentState!.validate()) return;
-    if (_specialty == null || _specialty!.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Choisissez une spécialité.')),
-      );
-      return;
-    }
-    if (_governorate == null || _governorate!.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Choisissez un gouvernorat.')),
-      );
-      return;
-    }
+    if (!_validateCurrentStep()) return;
 
     FocusScope.of(context).unfocus();
+    setState(() => _isSubmitting = true);
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Inscription en cours...')),
     );
 
+    final governorate = _governorate!.trim();
     ApiService.registerDoctor(
-      fullName: _fullNameController.text.trim(),
+      fullName: _fullName,
       email: _emailController.text.trim(),
       password: _passwordController.text,
       specialty: _specialty!,
-      governorate: _governorate!,
-      address: _addressController.text.trim(),
+      governorate: governorate,
+      address: governorate,
       phone: _phoneController.text.replaceAll(' ', ''),
-      orderNumber: _orderNumberController.text.trim(),
+      orderNumber: _orderNumberController.text.trim().isEmpty
+          ? null
+          : _orderNumberController.text.trim(),
       country: _country,
+      // diploma: _documentFile, // scan diplôme (réactiver avec _kDiplomaScanEnabled)
+      diploma: _kDiplomaScanEnabled ? _documentFile : null,
     ).then((_) {
       if (!mounted) return;
+      setState(() => _isSubmitting = false);
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Compte médecin créé. Vous pouvez vous connecter.')),
+        const SnackBar(
+          content: Text(
+            'Demande enregistrée. Un administrateur validera votre compte.',
+          ),
+        ),
       );
       Navigator.of(context).pop();
     }).catchError((error) {
       if (!mounted) return;
+      setState(() => _isSubmitting = false);
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -100,389 +243,581 @@ class _SignupPageState extends State<SignupPage> {
 
   @override
   Widget build(BuildContext context) {
-    const skyBlue = HeadsAppColors.brandAccent;
-    const lightSurface = HeadsAppColors.surfaceSoft;
-    const accentRed = HeadsAppColors.danger;
-    const textDark = HeadsAppColors.textPrimary;
+    return AuthScaffold(
+      backgroundColor: const Color(0xFFF5F7F9),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_step < 3) ...[
+            const SizedBox(height: 8),
+            const AuthBrandHeader(useLogoAsset: true, vertical: true),
+            const SizedBox(height: 20),
+            AuthSignupProgressBar(
+              currentStep: _progressStep,
+              totalSteps: _progressTotal,
+            ),
+            const SizedBox(height: 24),
+          ] else ...[
+            const SizedBox(height: 16),
+            const AuthSecurityHeader(),
+            const SizedBox(height: 16),
+            AuthSignupProgressBar(
+              currentStep: _progressStep,
+              totalSteps: _progressTotal,
+            ),
+            const SizedBox(height: 24),
+          ],
+          if (_step == 0) _buildStep1(),
+          if (_step == 1) _buildStep2(),
+          // Étape scan diplôme (désactivée pour tests)
+          if (_step == 2 && _kDiplomaScanEnabled) _buildStep3(),
+          if (_step == 3) _buildStep4(),
+        ],
+      ),
+    );
+  }
 
-    return Scaffold(
-      body: HeadsAppGradientBackdrop(
-        child: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              return SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 16,
+  Widget _buildStep1() {
+    return AuthFormCard(
+      child: Form(
+        key: _step1Key,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const AuthTitleBlock(
+              title: 'Créez votre profil',
+              subtitle: 'Bienvenue. Commençons par faire connaissance.',
+            ),
+            const SizedBox(height: 24),
+            AuthLabeledField(
+              label: 'Prénom',
+              labelUppercase: true,
+              child: TextFormField(
+                controller: _firstNameController,
+                textCapitalization: TextCapitalization.words,
+                decoration: authInputDecoration(
+                  hintText: 'Ex: Abid',
+                  prefixIcon: Icons.person_outline_rounded,
                 ),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: constraints.maxHeight - 32,
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Veuillez entrer votre prénom';
+                  }
+                  return null;
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+            AuthLabeledField(
+              label: 'Nom',
+              labelUppercase: true,
+              child: TextFormField(
+                controller: _lastNameController,
+                textCapitalization: TextCapitalization.words,
+                decoration: authInputDecoration(
+                  hintText: 'Ex: Tarek',
+                  prefixIcon: Icons.badge_outlined,
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Veuillez entrer votre nom';
+                  }
+                  return null;
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+            AuthLabeledField(
+              label: 'Email professionnel',
+              labelUppercase: true,
+              child: TextFormField(
+                controller: _emailController,
+                keyboardType: TextInputType.emailAddress,
+                decoration: authInputDecoration(
+                  hintText: 'exemple@clinique.tn',
+                  prefixIcon: Icons.email_outlined,
+                ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Veuillez entrer votre e-mail';
+                  }
+                  if (!value.contains('@')) {
+                    return 'E-mail invalide';
+                  }
+                  return null;
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+            AuthLabeledField(
+              label: 'Téléphone',
+              labelUppercase: true,
+              child: TextFormField(
+                controller: _phoneController,
+                keyboardType: TextInputType.phone,
+                decoration: authInputDecoration(
+                  hintText: '+216 54 879 256',
+                  prefixIcon: Icons.phone_outlined,
+                ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Veuillez entrer votre téléphone';
+                  }
+                  return null;
+                },
+              ),
+            ),
+            const SizedBox(height: 28),
+            AuthSolidButton(label: 'Suivant', onPressed: _nextStep),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStep2() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const AuthTitleBlock(
+          title: 'Vos informations médicales',
+          centered: true,
+        ),
+        const SizedBox(height: 20),
+        AuthFormCard(
+          child: Form(
+            key: _step2Key,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                AuthLabeledField(
+                  label: 'Spécialité médicale',
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _specialty,
+                    decoration: authDropdownDecoration(
+                      hintText: 'Sélectionnez votre spécialité',
+                      prefixIcon: Icons.medical_services_outlined,
+                    ),
+                    items: kSpecialties
+                        .map(
+                          (s) => DropdownMenuItem(value: s, child: Text(s)),
+                        )
+                        .toList(),
+                    onChanged: (v) => setState(() => _specialty = v),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Choisissez une spécialité';
+                      }
+                      return null;
+                    },
                   ),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 480),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              IconButton(
-                                icon: const Icon(
-                                  Icons.arrow_back_ios_new_rounded,
-                                  color: textDark,
-                                ),
-                                onPressed: () => Navigator.of(context).pop(),
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                'Inscription médecin',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w600),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Créer un compte professionnel',
-                            style: Theme.of(context)
-                                .textTheme
-                                .headlineSmall
-                                ?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: textDark,
-                                ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Les champs marqués par le backend sont obligatoires (nom, email, mot de passe, spécialité, gouvernorat, adresse, téléphone).',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyMedium
-                                ?.copyWith(
-                                  color: textDark.withValues(alpha: 0.8),
-                                ),
-                          ),
-                          const SizedBox(height: 24),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 20,
-                            ),
-                            decoration: BoxDecoration(
-                              color: lightSurface.withValues(alpha: 0.96),
-                              borderRadius: BorderRadius.circular(20),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.05),
-                                  blurRadius: 18,
-                                  offset: const Offset(0, 8),
-                                ),
-                              ],
-                            ),
-                            child: Form(
-                              key: _formKey,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  TextFormField(
-                                    controller: _fullNameController,
-                                    textCapitalization: TextCapitalization.words,
-                                    decoration: InputDecoration(
-                                      labelText: 'Nom complet',
-                                      prefixIcon: Icon(
-                                        Icons.person_rounded,
-                                        color: skyBlue,
-                                      ),
-                                      filled: true,
-                                      fillColor:
-                                          Colors.white.withValues(alpha: 0.92),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(16),
-                                        borderSide: BorderSide.none,
-                                      ),
-                                    ),
-                                    validator: (value) {
-                                      if (value == null || value.isEmpty) {
-                                        return 'Nom requis';
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                  const SizedBox(height: 12),
-                                  TextFormField(
-                                    controller: _emailController,
-                                    keyboardType: TextInputType.emailAddress,
-                                    decoration: InputDecoration(
-                                      labelText: 'Email',
-                                      prefixIcon: Icon(
-                                        Icons.email_rounded,
-                                        color: skyBlue,
-                                      ),
-                                      filled: true,
-                                      fillColor:
-                                          Colors.white.withValues(alpha: 0.92),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(16),
-                                        borderSide: BorderSide.none,
-                                      ),
-                                    ),
-                                    validator: (value) {
-                                      if (value == null || value.isEmpty) {
-                                        return 'Email requis';
-                                      }
-                                      if (!value.contains('@')) {
-                                        return 'Email invalide';
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                  const SizedBox(height: 12),
-                                  TextFormField(
-                                    controller: _passwordController,
-                                    obscureText: _obscurePassword,
-                                    inputFormatters:
-                                        PasswordValidator.inputFormatters,
-                                    decoration: InputDecoration(
-                                      labelText: 'Mot de passe',
-                                      prefixIcon: Icon(
-                                        Icons.lock_rounded,
-                                        color: skyBlue,
-                                      ),
-                                      filled: true,
-                                      fillColor:
-                                          Colors.white.withValues(alpha: 0.92),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(16),
-                                        borderSide: BorderSide.none,
-                                      ),
-                                      suffixIcon: IconButton(
-                                        icon: Icon(
-                                          _obscurePassword
-                                              ? Icons.visibility_off_rounded
-                                              : Icons.visibility_rounded,
-                                          color: Colors.grey,
-                                        ),
-                                        onPressed: () => setState(
-                                          () => _obscurePassword =
-                                              !_obscurePassword,
-                                        ),
-                                      ),
-                                    ),
-                                    validator: (value) => PasswordValidator.validate(
-                                      value,
-                                      emptyMessage: 'Mot de passe requis',
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    PasswordValidator.requirementsHint,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodySmall
-                                        ?.copyWith(
-                                          color: HeadsAppColors.textTertiary,
-                                          height: 1.35,
-                                        ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  DropdownButtonFormField<String>(
-                                    initialValue: _specialty,
-                                    decoration: InputDecoration(
-                                      labelText: 'Spécialité',
-                                      prefixIcon: Icon(
-                                        Icons.medical_information_rounded,
-                                        color: skyBlue,
-                                      ),
-                                      filled: true,
-                                      fillColor:
-                                          Colors.white.withValues(alpha: 0.92),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(16),
-                                        borderSide: BorderSide.none,
-                                      ),
-                                    ),
-                                    items: kSpecialties
-                                        .map(
-                                          (s) => DropdownMenuItem(
-                                            value: s,
-                                            child: Text(s),
-                                          ),
-                                        )
-                                        .toList(),
-                                    onChanged: (v) =>
-                                        setState(() => _specialty = v),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  DropdownButtonFormField<String>(
-                                    initialValue: _governorate,
-                                    decoration: InputDecoration(
-                                      labelText: 'Gouvernorat',
-                                      prefixIcon: Icon(
-                                        Icons.map_rounded,
-                                        color: skyBlue,
-                                      ),
-                                      filled: true,
-                                      fillColor:
-                                          Colors.white.withValues(alpha: 0.92),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(16),
-                                        borderSide: BorderSide.none,
-                                      ),
-                                    ),
-                                    items: kGovernorates
-                                        .map(
-                                          (g) => DropdownMenuItem(
-                                            value: g,
-                                            child: Text(g),
-                                          ),
-                                        )
-                                        .toList(),
-                                    onChanged: (v) =>
-                                        setState(() => _governorate = v),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  TextFormField(
-                                    controller: _addressController,
-                                    maxLines: 2,
-                                    decoration: InputDecoration(
-                                      labelText: 'Adresse du cabinet',
-                                      prefixIcon: Icon(
-                                        Icons.place_rounded,
-                                        color: skyBlue,
-                                      ),
-                                      filled: true,
-                                      fillColor:
-                                          Colors.white.withValues(alpha: 0.92),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(16),
-                                        borderSide: BorderSide.none,
-                                      ),
-                                    ),
-                                    validator: (value) {
-                                      if (value == null || value.isEmpty) {
-                                        return 'Adresse requise';
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                  const SizedBox(height: 12),
-                                  TextFormField(
-                                    controller: _phoneController,
-                                    keyboardType: TextInputType.phone,
-                                    decoration: InputDecoration(
-                                      labelText: 'Téléphone',
-                                      prefixIcon: Icon(
-                                        Icons.phone_rounded,
-                                        color: skyBlue,
-                                      ),
-                                      filled: true,
-                                      fillColor:
-                                          Colors.white.withValues(alpha: 0.92),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(16),
-                                        borderSide: BorderSide.none,
-                                      ),
-                                    ),
-                                    validator: (value) {
-                                      if (value == null || value.isEmpty) {
-                                        return 'Téléphone requis';
-                                      }
-                                      return null;
-                                    },
-                                  ),
-                                  const SizedBox(height: 12),
-                                  TextFormField(
-                                    controller: _orderNumberController,
-                                    decoration: InputDecoration(
-                                      labelText: 'N° d\'ordre (optionnel)',
-                                      prefixIcon: Icon(
-                                        Icons.badge_rounded,
-                                        color: skyBlue,
-                                      ),
-                                      filled: true,
-                                      fillColor:
-                                          Colors.white.withValues(alpha: 0.92),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(16),
-                                        borderSide: BorderSide.none,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  DropdownButtonFormField<String>(
-                                    initialValue: _country,
-                                    decoration: InputDecoration(
-                                      labelText: 'Pays',
-                                      prefixIcon: Icon(
-                                        Icons.public_rounded,
-                                        color: skyBlue,
-                                      ),
-                                      filled: true,
-                                      fillColor:
-                                          Colors.white.withValues(alpha: 0.92),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(16),
-                                        borderSide: BorderSide.none,
-                                      ),
-                                    ),
-                                    items: kCountries
-                                        .map(
-                                          (c) => DropdownMenuItem(
-                                            value: c,
-                                            child: Text(c),
-                                          ),
-                                        )
-                                        .toList(),
-                                    onChanged: (v) {
-                                      if (v != null) {
-                                        setState(() => _country = v);
-                                      }
-                                    },
-                                  ),
-                                  const SizedBox(height: 20),
-                                  SizedBox(
-                                    width: double.infinity,
-                                    child: ElevatedButton(
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: accentRed,
-                                        foregroundColor: Colors.white,
-                                        padding: const EdgeInsets.symmetric(
-                                          vertical: 16,
-                                        ),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(18),
-                                        ),
-                                        elevation: 4,
-                                      ),
-                                      onPressed: _onSignup,
-                                      child: const Text(
-                                        'CRÉER MON COMPTE',
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                ),
+                const SizedBox(height: 16),
+                AuthLabeledField(
+                  label: 'Numéro RPPS',
+                  child: TextFormField(
+                    controller: _orderNumberController,
+                    keyboardType: TextInputType.number,
+                    decoration: authInputDecoration(
+                      hintText: 'Ex: 12345',
+                      prefixIcon: Icons.numbers_rounded,
+                    ),
+                    validator: (value) {
+                      final v = value?.trim() ?? '';
+                      if (v.isEmpty) return null;
+                      if (!RegExp(r'^\d{1,5}$').hasMatch(v)) {
+                        return 'Maximum 5 chiffres';
+                      }
+                      return null;
+                    },
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.only(top: 6),
+                  child: Text(
+                    'Ce numéro sera vérifié auprès du conseil de l\'ordre.',
+                    style: TextStyle(
+                      color: HeadsAppColors.textTertiary,
+                      fontSize: 12,
+                      height: 1.35,
                     ),
                   ),
                 ),
-              );
-            },
+                const SizedBox(height: 16),
+                AuthLabeledField(
+                  label: 'Ville d\'exercice principale',
+                  child: Autocomplete<String>(
+                    optionsBuilder: (textEditingValue) {
+                      if (textEditingValue.text.isEmpty) {
+                        return kGovernorates;
+                      }
+                      return kGovernorates.where(
+                        (g) => g.toLowerCase().contains(
+                              textEditingValue.text.toLowerCase(),
+                            ),
+                      );
+                    },
+                    onSelected: (selection) {
+                      setState(() => _governorate = selection);
+                    },
+                    fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+                      if (_governorate != null && controller.text.isEmpty) {
+                        controller.text = _governorate!;
+                      }
+                      return TextFormField(
+                        controller: controller,
+                        focusNode: focusNode,
+                        decoration: authInputDecoration(
+                          hintText: 'Rechercher une ville...',
+                          prefixIcon: Icons.location_city_outlined,
+                        ),
+                        onChanged: (v) {
+                          if (kGovernorates.contains(v)) {
+                            _governorate = v;
+                          } else {
+                            _governorate = null;
+                          }
+                        },
+                        validator: (_) {
+                          final city = controller.text.trim();
+                          if (city.isEmpty) {
+                            return 'Veuillez sélectionner une ville';
+                          }
+                          if (!kGovernorates.contains(city)) {
+                            return 'Choisissez une ville de la liste';
+                          }
+                          _governorate = city;
+                          return null;
+                        },
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 28),
+                AuthSolidButton(label: 'Suivant', onPressed: _nextStep),
+              ],
+            ),
           ),
         ),
+        const SizedBox(height: 12),
+        AuthTextLink(label: 'Précédent', onPressed: _previousStep),
+      ],
+    );
+  }
+
+  Widget _buildStep3() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const AuthTitleBlock(
+          title: 'Validation Documents',
+          subtitle:
+              'Veuillez scanner votre carte de médecin ou justificatif pour finaliser votre accréditation professionnelle sur la plateforme.',
+          centered: true,
+        ),
+        const SizedBox(height: 20),
+        AuthFormCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Column(
+                  children: [
+                    Container(
+                      height: 56,
+                      width: 56,
+                      decoration: BoxDecoration(
+                        color: HeadsAppColors.brandHighlight,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.photo_camera_outlined,
+                        color: HeadsAppColors.brandPrimary,
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Scanner le document',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                        color: HeadsAppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Utilisez votre appareil photo pour une capture nette et lisible.',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: HeadsAppColors.textSecondary,
+                            height: 1.4,
+                          ),
+                    ),
+                    const SizedBox(height: 16),
+                    OutlinedButton.icon(
+                      onPressed: _pickDocument,
+                      icon: const Icon(Icons.camera_alt_outlined, size: 18),
+                      label: const Text('Lancer le scan'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: HeadsAppColors.brandPrimary,
+                        side: const BorderSide(color: HeadsAppColors.brandPrimary),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (_documentPreview != null) ...[
+                const SizedBox(height: 16),
+                Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: Image.memory(
+                        _documentPreview!,
+                        width: double.infinity,
+                        height: 180,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    Positioned(
+                      top: 10,
+                      left: 10,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: HeadsAppColors.success,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.check_rounded, color: Colors.white, size: 14),
+                            SizedBox(width: 4),
+                            Text(
+                              'CAPTURE VALIDÉE',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.4,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      bottom: 10,
+                      right: 10,
+                      child: Material(
+                        color: const Color(0xFFFEE2E2),
+                        shape: const CircleBorder(),
+                        child: InkWell(
+                          onTap: _removeDocument,
+                          customBorder: const CircleBorder(),
+                          child: const Padding(
+                            padding: EdgeInsets.all(8),
+                            child: Icon(
+                              Icons.delete_outline_rounded,
+                              color: HeadsAppColors.danger,
+                              size: 20,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 16),
+              const AuthInfoBox(
+                title: 'Conseils pour la validation',
+                message:
+                    'Assurez-vous que les quatre coins du document sont visibles et que les textes sont parfaitement nets. Évitez les reflets directs de lumière.',
+              ),
+              const SizedBox(height: 24),
+              AuthSolidButton(label: 'Suivant', onPressed: _nextStep),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        AuthTextLink(label: 'Retour', onPressed: _previousStep),
+      ],
+    );
+  }
+
+  Widget _buildStep4() {
+    return AuthFormCard(
+      child: Form(
+        key: _step4Key,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AuthLabeledField(
+              label: 'Mot de passe',
+              child: TextFormField(
+                controller: _passwordController,
+                obscureText: _obscurePassword,
+                inputFormatters: PasswordValidator.inputFormatters,
+                onChanged: (_) => setState(() {}),
+                decoration: authInputDecoration(
+                  hintText: '••••••••',
+                  prefixIcon: Icons.vpn_key_outlined,
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscurePassword
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                      color: HeadsAppColors.textTertiary,
+                      size: 20,
+                    ),
+                    onPressed: () =>
+                        setState(() => _obscurePassword = !_obscurePassword),
+                  ),
+                ),
+                validator: (value) => PasswordValidator.validate(
+                  value,
+                  emptyMessage: 'Veuillez entrer un mot de passe',
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: Row(
+                    children: List.generate(4, (index) {
+                      final filled = index < _passwordStrength;
+                      return Expanded(
+                        child: Container(
+                          margin: EdgeInsets.only(right: index < 3 ? 6 : 0),
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: filled
+                                ? HeadsAppColors.brandPrimary
+                                : const Color(0xFFE5E7EB),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      );
+                    }),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  _passwordStrengthLabel,
+                  style: const TextStyle(
+                    color: HeadsAppColors.brandPrimary,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 11,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            AuthLabeledField(
+              label: 'Confirmez le mot de passe',
+              child: TextFormField(
+                controller: _confirmPasswordController,
+                obscureText: _obscureConfirmPassword,
+                inputFormatters: PasswordValidator.inputFormatters,
+                decoration: authInputDecoration(
+                  hintText: '••••••••',
+                  prefixIcon: Icons.verified_user_outlined,
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscureConfirmPassword
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                      color: HeadsAppColors.textTertiary,
+                      size: 20,
+                    ),
+                    onPressed: () => setState(
+                      () => _obscureConfirmPassword = !_obscureConfirmPassword,
+                    ),
+                  ),
+                ),
+                validator: (value) => PasswordValidator.validateConfirm(
+                  value,
+                  _passwordController.text,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            _PasswordRequirement(
+              met: _passwordController.text.length >= 8,
+              label: '8 caractères minimum',
+            ),
+            const SizedBox(height: 8),
+            _PasswordRequirement(
+              met: RegExp(r'[0-9]').hasMatch(_passwordController.text) &&
+                  RegExp(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\;/`~]')
+                      .hasMatch(_passwordController.text),
+              label: '1 chiffre et 1 symbole',
+            ),
+            const SizedBox(height: 28),
+            AuthSolidButton(
+              label: 'Terminer l\'inscription',
+              onPressed: _isSubmitting ? null : _nextStep,
+              loading: _isSubmitting,
+            ),
+            const SizedBox(height: 8),
+            AuthTextLink(label: 'Précédent', onPressed: _previousStep),
+          ],
+        ),
       ),
+    );
+  }
+}
+
+class _PasswordRequirement extends StatelessWidget {
+  const _PasswordRequirement({required this.met, required this.label});
+
+  final bool met;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          height: 18,
+          width: 18,
+          decoration: BoxDecoration(
+            color: met ? HeadsAppColors.brandPrimary : const Color(0xFFE5E7EB),
+            shape: BoxShape.circle,
+          ),
+          child: met
+              ? const Icon(Icons.check_rounded, color: Colors.white, size: 12)
+              : null,
+        ),
+        const SizedBox(width: 10),
+        Text(
+          label,
+          style: TextStyle(
+            color: met ? HeadsAppColors.textSecondary : HeadsAppColors.textTertiary,
+            fontSize: 13,
+          ),
+        ),
+      ],
     );
   }
 }

@@ -61,6 +61,8 @@ class WebRtcService {
       StreamController<Map<String, dynamic>>.broadcast();
   final StreamController<Map<String, dynamic>> _doctorInboxNewMessageCtrl =
       StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<Map<String, dynamic>> _doctorNotificationCtrl =
+      StreamController<Map<String, dynamic>>.broadcast();
 
   String? _joinedConversationId;
 
@@ -93,6 +95,9 @@ class WebRtcService {
   /// Nouveau message patient → badge inbox tableau de bord.
   Stream<Map<String, dynamic>> get doctorInboxNewMessageEvents =>
       _doctorInboxNewMessageCtrl.stream;
+  /// Demande, formulaire, alerte tension, salle d'attente, etc.
+  Stream<Map<String, dynamic>> get doctorNotificationEvents =>
+      _doctorNotificationCtrl.stream;
 
   bool _socketConnected = false;
   bool get isSocketConnected => _socketConnected;
@@ -331,6 +336,11 @@ class WebRtcService {
     socket.on('doctor:inbox_new_message', (data) {
       if (data is Map) {
         _doctorInboxNewMessageCtrl.add(Map<String, dynamic>.from(data));
+      }
+    });
+    socket.on('doctor:notification', (data) {
+      if (data is Map) {
+        _doctorNotificationCtrl.add(Map<String, dynamic>.from(data));
       }
     });
     socket.on('call:incoming', (data) {

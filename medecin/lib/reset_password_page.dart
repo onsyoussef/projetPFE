@@ -1,10 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import 'headsapp_theme.dart';
 import 'services/api_service.dart';
 import 'utils/password_validator.dart';
-import 'widgets/headsapp_brand_widgets.dart';
+import 'widgets/auth_ui_widgets.dart';
 
 /// Écran 1 : saisie de l'email pour recevoir un code.
 class ResetPasswordPage extends StatefulWidget {
@@ -29,7 +30,7 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
     if (email.isEmpty || !email.contains('@')) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Veuillez entrer une adresse email valide.'),
+          content: Text('Veuillez entrer une adresse e-mail valide.'),
         ),
       );
       return;
@@ -39,18 +40,12 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
     ApiService.requestResetCode(email: email).then((data) {
       if (!mounted) return;
       setState(() => _sendingCode = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            data['message'] ??
-                'Un code à 6 chiffres a été envoyé à votre adresse email.',
-          ),
-          backgroundColor: Colors.green.shade700,
-        ),
-      );
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => ResetPasswordCodePage(email: email),
+          builder: (_) => ResetPasswordLinkSentPage(
+            email: email,
+            message: data['message']?.toString(),
+          ),
         ),
       );
     }).catchError((error) {
@@ -66,142 +61,171 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
     });
   }
 
-  static const _skyBlue = HeadsAppColors.brandAccent;
-  static const _inputFill = HeadsAppColors.surfaceSoft;
+  @override
+  Widget build(BuildContext context) {
+    return AuthScaffold(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 24),
+          const AuthIconHeader(icon: Icons.lock_reset_rounded),
+          const SizedBox(height: 24),
+          Text(
+            'Mot de passe oublié ?',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: HeadsAppColors.textPrimary,
+                  letterSpacing: -0.4,
+                ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Entrez l\'adresse e-mail associée à votre compte. Nous vous enverrons un code pour réinitialiser votre mot de passe.',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: HeadsAppColors.textSecondary,
+                  height: 1.5,
+                ),
+          ),
+          const SizedBox(height: 28),
+          AuthFormCard(
+            padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                AuthLabeledField(
+                  label: 'Adresse E-mail',
+                  child: TextField(
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: authInputDecoration(
+                      hintText: 'nom@exemple.com',
+                      prefixIcon: Icons.email_outlined,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                AuthSolidButton(
+                  label: 'Envoyer le code',
+                  loading: _sendingCode,
+                  onPressed: _sendingCode ? null : _onSendCode,
+                ),
+                const SizedBox(height: 20),
+                const Divider(color: Color(0xFFE5E7EB), height: 1),
+                const SizedBox(height: 8),
+                Center(
+                  child: TextButton.icon(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(
+                      Icons.arrow_back_rounded,
+                      size: 18,
+                      color: HeadsAppColors.brandPrimary,
+                    ),
+                    label: const Text(
+                      'Retour à la connexion',
+                      style: TextStyle(
+                        color: HeadsAppColors.brandPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Écran intermédiaire : confirmation d'envoi du code.
+class ResetPasswordLinkSentPage extends StatelessWidget {
+  const ResetPasswordLinkSentPage({
+    super.key,
+    required this.email,
+    this.message,
+  });
+
+  final String email;
+  final String? message;
+
+  void _onResend(BuildContext context) {
+    ApiService.requestResetCode(email: email).then((_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Un nouveau code a été envoyé.')),
+      );
+    }).catchError((error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            error.toString().replaceFirst('Exception: ', ''),
+          ),
+        ),
+      );
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: HeadsAppGradientBackdrop(
-        child: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              return SingleChildScrollView(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: constraints.maxHeight - 32,
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          IconButton(
-                            icon: const Icon(
-                              Icons.arrow_back_ios_new_rounded,
-                              color: Colors.black87,
-                            ),
-                            onPressed: () => Navigator.of(context).pop(),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Mot de passe oublié',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
-                                ?.copyWith(fontWeight: FontWeight.w600),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-                      const Center(
-                        child: HeadsAppHeroBadge(
-                          icon: Icons.lock_reset_rounded,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        'Réinitialiser le mot de passe',
-                        style: Theme.of(context)
-                            .textTheme
-                            .headlineSmall
-                            ?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: HeadsAppColors.textPrimary,
-                            ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Entrez votre adresse email. Un code à 6 chiffres vous sera envoyé pour réinitialiser votre mot de passe.',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodyMedium
-                            ?.copyWith(color: HeadsAppColors.textSecondary),
-                      ),
-                      const SizedBox(height: 28),
-                      HeadsAppSurfaceCard(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 24,
-                        ),
-                        child: Column(
-                          children: [
-                            TextField(
-                              controller: _emailController,
-                              keyboardType: TextInputType.emailAddress,
-                              decoration: InputDecoration(
-                                labelText: 'Adresse email',
-                                prefixIcon: Icon(
-                                  Icons.email_rounded,
-                                  color: _skyBlue,
-                                ),
-                                filled: true,
-                                fillColor: _inputFill,
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                  borderSide: BorderSide.none,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 24),
-                            SizedBox(
-                              width: double.infinity,
-                              child: FilledButton(
-                                onPressed: _sendingCode ? null : _onSendCode,
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: HeadsAppColors.brandPrimary,
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 16,
-                                  ),
-                                  elevation: 4,
-                                  shadowColor: HeadsAppColors.brandPrimary
-                                      .withValues(alpha: 0.25),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(18),
-                                  ),
-                                ),
-                                child: _sendingCode
-                                    ? const SizedBox(
-                                        height: 22,
-                                        width: 22,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.white,
-                                        ),
-                                      )
-                                    : const Text(
-                                        'Envoyer le code',
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+    return AuthScaffold(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 40),
+          const AuthSuccessIcon(),
+          const SizedBox(height: 28),
+          const AuthTitleBlock(
+            title: 'Code envoyé !',
+            subtitle:
+                'Consultez votre boîte mail pour obtenir votre code de réinitialisation.',
+            centered: true,
+          ),
+          const SizedBox(height: 36),
+          AuthSolidButton(
+            label: 'Retour à la connexion',
+            onPressed: () {
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(
+                  builder: (_) => ResetPasswordCodePage(email: email),
                 ),
               );
             },
           ),
-        ),
+          const SizedBox(height: 24),
+          Text(
+            'Vous n\'avez rien reçu ?',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: HeadsAppColors.textSecondary,
+                ),
+          ),
+          TextButton(
+            onPressed: () => _onResend(context),
+            child: const Text(
+              'Renvoyer le code',
+              style: TextStyle(
+                color: HeadsAppColors.brandPrimary,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.4,
+                fontSize: 12,
+              ),
+            ),
+          ),
+          if (message != null && message!.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              message!,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: HeadsAppColors.textTertiary,
+                  ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -222,9 +246,18 @@ class _ResetPasswordCodePageState extends State<ResetPasswordCodePage> {
       List.generate(6, (_) => TextEditingController());
   final List<FocusNode> _focusNodes = List.generate(6, (_) => FocusNode());
   bool _validating = false;
+  int _resendSeconds = 120;
+  Timer? _resendTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _startResendTimer();
+  }
 
   @override
   void dispose() {
+    _resendTimer?.cancel();
     for (final c in _digitControllers) {
       c.dispose();
     }
@@ -234,30 +267,63 @@ class _ResetPasswordCodePageState extends State<ResetPasswordCodePage> {
     super.dispose();
   }
 
-  String _currentCode() {
-    return _digitControllers.map((c) => c.text).join();
+  void _startResendTimer() {
+    _resendTimer?.cancel();
+    setState(() => _resendSeconds = 120);
+    _resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_resendSeconds <= 0) {
+        timer.cancel();
+        setState(() {});
+        return;
+      }
+      setState(() => _resendSeconds--);
+    });
+  }
+
+  String _currentCode() => _digitControllers.map((c) => c.text).join();
+
+  String _formatTimer() {
+    final m = (_resendSeconds ~/ 60).toString().padLeft(2, '0');
+    final s = (_resendSeconds % 60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  void _onResendCode() {
+    if (_resendSeconds > 0) return;
+    ApiService.requestResetCode(email: widget.email).then((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Un nouveau code a été envoyé.')),
+      );
+      _startResendTimer();
+    }).catchError((error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            error.toString().replaceFirst('Exception: ', ''),
+          ),
+        ),
+      );
+    });
   }
 
   void _onValidateCode() {
     final code = _currentCode();
     if (code.length != 6) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Le code doit contenir 6 chiffres.'),
-        ),
+        const SnackBar(content: Text('Le code doit contenir 6 chiffres.')),
       );
       return;
     }
     setState(() => _validating = true);
-    ApiService.verifyResetCode(email: widget.email, code: code).then((data) {
+    ApiService.verifyResetCode(email: widget.email, code: code).then((_) {
       if (!mounted) return;
       setState(() => _validating = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(data['message'] ?? 'Code vérifié avec succès.'),
-          backgroundColor: Colors.green.shade700,
-        ),
-      );
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => ResetPasswordNewPasswordPage(
@@ -280,220 +346,101 @@ class _ResetPasswordCodePageState extends State<ResetPasswordCodePage> {
     });
   }
 
-  static const _skyBlue = Color(0xFF4FA8D5);
-
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [_skyBlue.withValues(alpha: 0.15), Colors.white],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+    return AuthScaffold(
+      showBackButton: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 16),
+          const AuthIconHeader(icon: Icons.mark_email_read_outlined),
+          const SizedBox(height: 24),
+          Text(
+            'Vérification',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: HeadsAppColors.brandPrimary,
+                  letterSpacing: -0.4,
+                ),
           ),
-        ),
-        child: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              return SingleChildScrollView(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: constraints.maxHeight - 32,
+          const SizedBox(height: 12),
+          Text.rich(
+            TextSpan(
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: HeadsAppColors.textSecondary,
+                    height: 1.45,
                   ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          IconButton(
-                            icon: const Icon(
-                              Icons.arrow_back_ios_new_rounded,
-                              color: Colors.black87,
-                            ),
-                            onPressed: () => Navigator.of(context).pop(),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Code de vérification',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
-                                ?.copyWith(fontWeight: FontWeight.w600),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-                      Center(
-                        child: Container(
-                          height: 72,
-                          width: 72,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: LinearGradient(
-                              colors: [
-                                _skyBlue,
-                                _skyBlue.withValues(alpha: 0.7),
-                              ],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: _skyBlue.withValues(alpha: 0.3),
-                                blurRadius: 12,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: const Icon(
-                            Icons.pin_rounded,
-                            color: Colors.white,
-                            size: 36,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        'Entrez le code reçu par email',
-                        style: Theme.of(context)
-                            .textTheme
-                            .headlineSmall
-                            ?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
-                            ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Un code à 6 chiffres a été envoyé à ${widget.email}.',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodyMedium
-                            ?.copyWith(color: Colors.black54),
-                      ),
-                      const SizedBox(height: 28),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 28,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(24),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.06),
-                              blurRadius: 20,
-                              offset: const Offset(0, 8),
-                            ),
-                            BoxShadow(
-                              color: _skyBlue.withValues(alpha: 0.06),
-                              blurRadius: 24,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                              children: List.generate(6, (index) {
-                                return SizedBox(
-                                  width: 46,
-                                  child: TextField(
-                                    controller: _digitControllers[index],
-                                    focusNode: _focusNodes[index],
-                                    keyboardType: TextInputType.number,
-                                    textAlign: TextAlign.center,
-                                    maxLength: 1,
-                                    style: const TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.black,
-                                    ),
-                                    inputFormatters: [
-                                      FilteringTextInputFormatter.digitsOnly,
-                                    ],
-                                    decoration: InputDecoration(
-                                      counterText: '',
-                                      filled: true,
-                                      fillColor: const Color(0xFFF5FBFF),
-                                      enabledBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(14),
-                                        borderSide: BorderSide(
-                                          color: _skyBlue.withValues(alpha: 0.6),
-                                          width: 1.5,
-                                        ),
-                                      ),
-                                      focusedBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(14),
-                                        borderSide: const BorderSide(
-                                          color: _skyBlue,
-                                          width: 2,
-                                        ),
-                                      ),
-                                    ),
-                                    onChanged: (val) {
-                                      if (val.isNotEmpty && index < 5) {
-                                        _focusNodes[index + 1].requestFocus();
-                                      } else if (val.isEmpty && index > 0) {
-                                        _focusNodes[index - 1].requestFocus();
-                                      }
-                                    },
-                                  ),
-                                );
-                              }),
-                            ),
-                            const SizedBox(height: 28),
-                            SizedBox(
-                              width: double.infinity,
-                              child: FilledButton(
-                                onPressed: _validating ? null : _onValidateCode,
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: const Color(0xFFE1395F),
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 16,
-                                  ),
-                                  elevation: 4,
-                                  shadowColor: _skyBlue.withValues(alpha: 0.4),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(18),
-                                  ),
-                                ),
-                                child: _validating
-                                    ? const SizedBox(
-                                        height: 22,
-                                        width: 22,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.white,
-                                        ),
-                                      )
-                                    : const Text(
-                                        'Valider le code',
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+              children: [
+                const TextSpan(
+                  text: 'Nous avons envoyé un code de confirmation à ',
+                ),
+                TextSpan(
+                  text: widget.email,
+                  style: const TextStyle(
+                    color: HeadsAppColors.textPrimary,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
-              );
-            },
+              ],
+            ),
+            textAlign: TextAlign.center,
           ),
-        ),
+          const SizedBox(height: 32),
+          AuthOtpBoxes(
+            controllers: _digitControllers,
+            focusNodes: _focusNodes,
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'Vous n\'avez pas reçu le code ?',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: HeadsAppColors.textSecondary,
+                ),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              TextButton(
+                onPressed: _resendSeconds > 0 ? null : _onResendCode,
+                child: const Text(
+                  'Renvoyer le code',
+                  style: TextStyle(
+                    color: HeadsAppColors.brandPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (_resendSeconds > 0) ...[
+                const SizedBox(width: 4),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: HeadsAppColors.authInputFill,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    _formatTimer(),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: HeadsAppColors.textTertiary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 28),
+          AuthSolidButton(
+            label: 'Confirmer',
+            loading: _validating,
+            onPressed: _validating ? null : _onValidateCode,
+          ),
+        ],
       ),
     );
   }
@@ -536,9 +483,6 @@ class _ResetPasswordNewPasswordPageState
     if (!_formKey.currentState!.validate()) return;
     FocusScope.of(context).unfocus();
     setState(() => _saving = true);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Mise à jour du mot de passe...')),
-    );
     ApiService.verifyAndResetPassword(
       email: widget.email,
       code: widget.code,
@@ -546,20 +490,17 @@ class _ResetPasswordNewPasswordPageState
     ).then((data) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            data['message'] ?? 'Mot de passe modifié.',
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => ResetPasswordSuccessPage(
+            message: data['message']?.toString(),
           ),
-          backgroundColor: Colors.green.shade700,
         ),
+        (route) => route.isFirst,
       );
-      Navigator.of(context).popUntil((route) => route.isFirst);
     }).catchError((error) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -572,226 +513,137 @@ class _ResetPasswordNewPasswordPageState
 
   @override
   Widget build(BuildContext context) {
-    const skyBlue = Color(0xFF4FA8D5);
-    const inputFill = Color(0xFFF5FBFF);
-
-    return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [skyBlue.withValues(alpha: 0.15), Colors.white],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+    return AuthScaffold(
+      showBackButton: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 8),
+          const AuthIconHeader(icon: Icons.lock_outline_rounded),
+          const SizedBox(height: 20),
+          const AuthTitleBlock(
+            title: 'Nouveau mot de passe',
+            subtitle:
+                'Pour terminer, entrez votre nouveau mot de passe et confirmez-le.',
+            centered: true,
           ),
-        ),
-        child: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              return SingleChildScrollView(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: constraints.maxHeight - 32,
+          const SizedBox(height: 28),
+          AuthFormCard(
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  AuthLabeledField(
+                    label: 'Nouveau mot de passe',
+                    child: TextFormField(
+                      controller: _newPasswordController,
+                      obscureText: _obscureNewPassword,
+                      inputFormatters: PasswordValidator.inputFormatters,
+                      decoration: authInputDecoration(
+                        hintText: '••••••••',
+                        prefixIcon: Icons.vpn_key_outlined,
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscureNewPassword
+                                ? Icons.visibility_off_outlined
+                                : Icons.visibility_outlined,
+                            color: HeadsAppColors.textTertiary,
+                            size: 20,
+                          ),
+                          onPressed: () => setState(
+                            () => _obscureNewPassword = !_obscureNewPassword,
+                          ),
+                        ),
+                      ),
+                      validator: (value) => PasswordValidator.validate(
+                        value,
+                        emptyMessage:
+                            'Veuillez entrer un nouveau mot de passe',
+                      ),
+                    ),
                   ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          IconButton(
-                            icon: const Icon(
-                              Icons.arrow_back_ios_new_rounded,
-                              color: Colors.black87,
-                            ),
-                            onPressed: () => Navigator.of(context).pop(),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Nouveau mot de passe',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
-                                ?.copyWith(fontWeight: FontWeight.w600),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-                      Text(
-                        'Choisissez un nouveau mot de passe',
-                        style: Theme.of(context)
-                            .textTheme
-                            .headlineSmall
-                            ?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
-                            ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Pour terminer, entrez votre nouveau mot de passe et confirmez-le.',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodyMedium
-                            ?.copyWith(color: Colors.black54),
-                      ),
-                      const SizedBox(height: 28),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 24,
+                  const SizedBox(height: 6),
+                  Text(
+                    PasswordValidator.requirementsHint,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: HeadsAppColors.textTertiary,
+                          height: 1.35,
                         ),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(24),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.06),
-                              blurRadius: 20,
-                              offset: const Offset(0, 8),
-                            ),
-                            BoxShadow(
-                              color: skyBlue.withValues(alpha: 0.08),
-                              blurRadius: 24,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: Form(
-                          key: _formKey,
-                          child: Column(
-                            children: [
-                              TextFormField(
-                                controller: _newPasswordController,
-                                obscureText: _obscureNewPassword,
-                                inputFormatters:
-                                    PasswordValidator.inputFormatters,
-                                decoration: InputDecoration(
-                                  labelText: 'Nouveau mot de passe',
-                                  prefixIcon: Icon(
-                                    Icons.lock_reset_rounded,
-                                    color: skyBlue,
-                                  ),
-                                  filled: true,
-                                  fillColor: inputFill,
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                    borderSide: BorderSide.none,
-                                  ),
-                                  suffixIcon: IconButton(
-                                    icon: Icon(
-                                      _obscureNewPassword
-                                          ? Icons.visibility_off_rounded
-                                          : Icons.visibility_rounded,
-                                      color: Colors.grey,
-                                    ),
-                                    onPressed: () => setState(
-                                        () => _obscureNewPassword =
-                                            !_obscureNewPassword),
-                                  ),
-                                ),
-                                validator: (value) => PasswordValidator.validate(
-                                  value,
-                                  emptyMessage:
-                                      'Veuillez entrer un nouveau mot de passe',
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                PasswordValidator.requirementsHint,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(
-                                      color: HeadsAppColors.textTertiary,
-                                      height: 1.35,
-                                    ),
-                              ),
-                              const SizedBox(height: 16),
-                              TextFormField(
-                                controller: _confirmPasswordController,
-                                obscureText: _obscureConfirmPassword,
-                                inputFormatters:
-                                    PasswordValidator.inputFormatters,
-                                decoration: InputDecoration(
-                                  labelText: 'Confirmer le mot de passe',
-                                  prefixIcon: Icon(
-                                    Icons.lock_outline_rounded,
-                                    color: skyBlue,
-                                  ),
-                                  filled: true,
-                                  fillColor: inputFill,
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                    borderSide: BorderSide.none,
-                                  ),
-                                  suffixIcon: IconButton(
-                                    icon: Icon(
-                                      _obscureConfirmPassword
-                                          ? Icons.visibility_off_rounded
-                                          : Icons.visibility_rounded,
-                                      color: Colors.grey,
-                                    ),
-                                    onPressed: () => setState(
-                                        () => _obscureConfirmPassword =
-                                            !_obscureConfirmPassword),
-                                  ),
-                                ),
-                                validator: (value) => PasswordValidator.validateConfirm(
-                                  value,
-                                  _newPasswordController.text,
-                                ),
-                              ),
-                              const SizedBox(height: 24),
-                              SizedBox(
-                                width: double.infinity,
-                                child: FilledButton(
-                                  onPressed: _saving ? null : _onResetPassword,
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: const Color(0xFFE1395F),
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 16,
-                                    ),
-                                    elevation: 4,
-                                    shadowColor: skyBlue.withValues(alpha: 0.4),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(18),
-                                    ),
-                                  ),
-                                  child: _saving
-                                      ? const SizedBox(
-                                          width: 20,
-                                          height: 20,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: Colors.white,
-                                          ),
-                                        )
-                                      : const Text(
-                                          'Changer le mot de passe',
-                                          style: TextStyle(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
                   ),
-                ),
-              );
-            },
+                  const SizedBox(height: 16),
+                  AuthLabeledField(
+                    label: 'Confirmer le mot de passe',
+                    child: TextFormField(
+                      controller: _confirmPasswordController,
+                      obscureText: _obscureConfirmPassword,
+                      inputFormatters: PasswordValidator.inputFormatters,
+                      decoration: authInputDecoration(
+                        hintText: '••••••••',
+                        prefixIcon: Icons.verified_user_outlined,
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscureConfirmPassword
+                                ? Icons.visibility_off_outlined
+                                : Icons.visibility_outlined,
+                            color: HeadsAppColors.textTertiary,
+                            size: 20,
+                          ),
+                          onPressed: () => setState(
+                            () => _obscureConfirmPassword =
+                                !_obscureConfirmPassword,
+                          ),
+                        ),
+                      ),
+                      validator: (value) => PasswordValidator.validateConfirm(
+                        value,
+                        _newPasswordController.text,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  AuthSolidButton(
+                    label: 'Changer le mot de passe',
+                    loading: _saving,
+                    onPressed: _saving ? null : _onResetPassword,
+                  ),
+                ],
+              ),
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
 }
 
+class ResetPasswordSuccessPage extends StatelessWidget {
+  const ResetPasswordSuccessPage({super.key, this.message});
+
+  final String? message;
+
+  @override
+  Widget build(BuildContext context) {
+    return AuthScaffold(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 40),
+          const AuthSuccessIcon(),
+          const SizedBox(height: 28),
+          AuthTitleBlock(
+            title: 'Mot de passe modifié !',
+            subtitle: message ??
+                'Votre mot de passe a été mis à jour avec succès.',
+            centered: true,
+          ),
+          const SizedBox(height: 36),
+          AuthSolidButton(
+            label: 'Retour à la connexion',
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ],
+      ),
+    );
+  }
+}

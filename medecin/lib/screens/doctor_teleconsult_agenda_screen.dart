@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 import '../services/api_service.dart';
@@ -93,23 +94,25 @@ class _RdvRow {
 
 class _DoctorTeleconsultAgendaScreenState
     extends State<DoctorTeleconsultAgendaScreen> {
-  /// Aligné sur [DoctorHomeScreen] / thème `MedecinApp` (seed 0xFF4FA8D5).
-  static const Color _skyDark = Color(0xFF4FA8D5);
-  static const Color _surfaceCalm = Color(0xFFE8F6FC);
-  static const Color _onSurfaceStrong = Color(0xFF2C3E50);
-  /// Calendrier : même codes que le dialogue `showScheduleTeleconsultDialog`.
-  static const Color _calInk = Color(0xFF0F172A);
-  static const Color _calTodayText = Color(0xFF0369A1);
+  static const Color _primaryBlue = Color(0xFF2459A8);
+  static const Color _primaryBlueDark = Color(0xFF1A3D5F);
+  static const Color _pageBg = Color(0xFFF5F7FA);
+  static const Color _onSurfaceStrong = Color(0xFF1A2740);
+  static const Color _textSecondary = Color(0xFF64748B);
+  static const Color _infoBg = Color(0xFFE8F2FF);
+  static const Color _slotsBg = Color(0xFFF1F5F9);
   static const Color _calMarkerDone = Color(0xFF16A34A);
   static const Color _calMarkerBusy = Color(0xFFF97316);
-  static const Color _calShellBg = Color(0xFFF8FAFC);
 
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
-  DateTime? _hoveredDay;
   List<_RdvRow> _monthList = [];
   bool _loading = true;
   String? _error;
+  String? _selectedHeure;
+  Set<String> _occupiedHeures = {};
+  bool _loadingSlots = false;
+  bool _booking = false;
 
   String _monthKey(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}';
@@ -126,7 +129,8 @@ class _DoctorTeleconsultAgendaScreenState
   void initState() {
     super.initState();
     _focusedDay = _stripTime(DateTime.now());
-    _loadMonth();
+    _selectedDay = _focusedDay;
+    _loadMonth().then((_) => _refreshOccupiedSlots());
   }
 
   Future<void> _loadMonth() async {
@@ -170,39 +174,6 @@ class _DoctorTeleconsultAgendaScreenState
   String _humanDate(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
-  int get _countMonth => _monthList.length;
-
-  static Widget _agendaLegendDot(Color color, String label) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 6),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: Colors.blueGrey.shade700,
-          ),
-        ),
-      ],
-    );
-  }
-
-  void _goToday() {
-    final n = _stripTime(DateTime.now());
-    setState(() {
-      _focusedDay = n;
-      _selectedDay = n;
-    });
-    _loadMonth();
-  }
-
   Future<Set<String>> _occupiedHeuresForDay(DateTime day) async {
     final key = _dateKey(day);
     try {
@@ -225,26 +196,63 @@ class _DoctorTeleconsultAgendaScreenState
     }
   }
 
-  Future<void> _openQuickBookingClock(DateTime day) async {
-    if (_isPastDay(day)) return;
+  Future<void> _refreshOccupiedSlots() async {
+    final day = _selectedDay;
+    if (day == null || _isPastDay(day)) {
+      if (!mounted) return;
+      setState(() {
+        _occupiedHeures = {};
+        _selectedHeure = null;
+        _loadingSlots = false;
+      });
+      return;
+    }
+    setState(() => _loadingSlots = true);
     final occupied = await _occupiedHeuresForDay(day);
     if (!mounted) return;
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: const TimeOfDay(hour: 9, minute: 0),
-      initialEntryMode: TimePickerEntryMode.dial,
-      confirmText: 'Confirmer',
-    );
-    if (picked == null || !mounted) return;
+    setState(() {
+      _occupiedHeures = occupied;
+      _loadingSlots = false;
+      if (_selectedHeure != null &&
+          (_occupiedHeures.contains(_selectedHeure) ||
+              _isSlotPast(_selectedHeure!, day))) {
+        _selectedHeure = null;
+      }
+    });
+  }
 
-    final heure =
-        '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+  List<String> _generateSlots(int startHour, int startMin, int endHour, int endMin) {
+    final out = <String>[];
+    var cursor = DateTime(2000, 1, 1, startHour, startMin);
+    final end = DateTime(2000, 1, 1, endHour, endMin);
+    while (!cursor.isAfter(end)) {
+      out.add(
+        '${cursor.hour.toString().padLeft(2, '0')}:${cursor.minute.toString().padLeft(2, '0')}',
+      );
+      cursor = cursor.add(const Duration(minutes: 45));
+    }
+    return out;
+  }
+
+  bool _isSlotPast(String heure, DateTime day) {
+    final parts = heure.split(':');
+    if (parts.length < 2) return false;
+    final h = int.tryParse(parts[0]) ?? 0;
+    final m = int.tryParse(parts[1]) ?? 0;
+    final slotDt = DateTime(day.year, day.month, day.day, h, m);
+    return slotDt.isBefore(DateTime.now());
+  }
+
+  bool _isSlotBlocked(String heure, DateTime day) =>
+      _occupiedHeures.contains(heure) || _isSlotPast(heure, day);
+
+  Future<void> _bookSlot(DateTime day, String heure) async {
     final local = DateTime(
       day.year,
       day.month,
       day.day,
-      picked.hour,
-      picked.minute,
+      int.parse(heure.split(':')[0]),
+      int.parse(heure.split(':')[1]),
     );
     final selectedDateLabel = '${day.day}/${day.month}/${day.year}';
 
@@ -255,13 +263,14 @@ class _DoctorTeleconsultAgendaScreenState
       return;
     }
 
-    if (occupied.contains(heure)) {
+    if (_occupiedHeures.contains(heure)) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('⛔ $heure est déjà réservé.')),
       );
       return;
     }
 
+    setState(() => _booking = true);
     try {
       await ApiService.postRendezVous(
         medecinId: widget.doctorId,
@@ -284,7 +293,7 @@ class _DoctorTeleconsultAgendaScreenState
           content: Text('Rendez-vous fixé le $selectedDateLabel à $heure'),
         ),
       );
-      await _loadMonth();
+      widget.onClose?.call();
     } on RendezVousConflictException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -301,25 +310,459 @@ class _DoctorTeleconsultAgendaScreenState
           content: Text(e.toString().replaceFirst('Exception: ', '')),
         ),
       );
+    } finally {
+      if (mounted) setState(() => _booking = false);
     }
   }
 
-  Widget _buildMainContent(double calMaxH) {
-    final width = MediaQuery.sizeOf(context).width;
-    final isPhone = width < 430;
-    final isVeryCompact = width < 360;
-    final baseRowHeight = isVeryCompact ? 38.0 : (isPhone ? 42.0 : 48.0);
-    // Évite l'overflow du widget interne de TableCalendar quand la popup est basse.
-    const reservedCalendarChrome = 88.0; // header + jours semaine + marges
-    final maxRowHeightFromSpace = ((calMaxH - reservedCalendarChrome) / 6).clamp(26.0, 56.0);
-    final rowHeight = math.min(baseRowHeight, maxRowHeightFromSpace);
-    final horizontalPad = isVeryCompact ? 8.0 : (isPhone ? 10.0 : 12.0);
-
-    if (_loading) {
-      return Center(
-        child: CircularProgressIndicator(
-          color: Theme.of(context).colorScheme.primary,
+  Future<void> _confirmSelectedSlot() async {
+    final day = _selectedDay;
+    final heure = _selectedHeure;
+    if (day == null || heure == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sélectionnez une date et un créneau horaire.'),
         ),
+      );
+      return;
+    }
+    await _bookSlot(day, heure);
+  }
+
+  Widget _buildPlanningHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 8, 12, 0),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: widget.onClose ?? () => Navigator.of(context).maybePop(),
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+            color: _primaryBlue,
+          ),
+          Text(
+            'Planification',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: _primaryBlue,
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoBox() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _infoBg,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline_rounded, color: _primaryBlue, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Information importante',
+                  style: TextStyle(
+                    color: _primaryBlue,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Les créneaux déjà réservés ou passés ne sont pas sélectionnables. '
+                  'Prévoyez environ 45 minutes pour la téléconsultation.',
+                  style: TextStyle(
+                    color: _primaryBlue.withValues(alpha: 0.9),
+                    fontSize: 13,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTimeSlotChip(String heure, DateTime day) {
+    final blocked = _isSlotBlocked(heure, day);
+    final selected = _selectedHeure == heure;
+    final occupied = _occupiedHeures.contains(heure);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: blocked
+            ? null
+            : () => setState(() => _selectedHeure = heure),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: selected ? _primaryBlue.withValues(alpha: 0.1) : Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected
+                  ? _primaryBlue
+                  : blocked
+                      ? const Color(0xFFE2E8F0)
+                      : const Color(0xFFE2E8F0),
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                heure,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: blocked
+                      ? _textSecondary.withValues(alpha: 0.55)
+                      : selected
+                          ? _primaryBlue
+                          : _onSurfaceStrong,
+                  decoration: blocked ? TextDecoration.lineThrough : null,
+                ),
+              ),
+              if (occupied) ...[
+                const SizedBox(width: 6),
+                Icon(
+                  Icons.block_rounded,
+                  size: 16,
+                  color: _textSecondary.withValues(alpha: 0.5),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTimeSlotsSection() {
+    final day = _selectedDay;
+    if (day == null || _isPastDay(day)) {
+      return const SizedBox.shrink();
+    }
+
+    final morning = _generateSlots(9, 0, 12, 0);
+    final afternoon = _generateSlots(14, 0, 18, 0);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _slotsBg,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Horaires disponibles',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: _onSurfaceStrong,
+            ),
+          ),
+          if (_loadingSlots)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            )
+          else ...[
+            const SizedBox(height: 14),
+            Text(
+              'MATINÉE',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.8,
+                color: _textSecondary.withValues(alpha: 0.85),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: morning.map((h) => _buildTimeSlotChip(h, day)).toList(),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'APRÈS-MIDI',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.8,
+                color: _textSecondary.withValues(alpha: 0.85),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children:
+                  afternoon.map((h) => _buildTimeSlotChip(h, day)).toList(),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCalendarCard() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 18,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: TableCalendar<_RdvRow>(
+        locale: 'fr_FR',
+        firstDay: DateTime.utc(2020, 1, 1),
+        lastDay: DateTime.utc(2035, 12, 31),
+        focusedDay: _focusedDay,
+        calendarFormat: CalendarFormat.month,
+        availableCalendarFormats: const {CalendarFormat.month: 'Mois'},
+        sixWeekMonthsEnforced: false,
+        headerStyle: HeaderStyle(
+          formatButtonVisible: false,
+          titleCentered: true,
+          titleTextFormatter: (date, locale) {
+            final raw = DateFormat.yMMMM('fr_FR').format(date);
+            if (raw.isEmpty) return raw;
+            return '${raw[0].toUpperCase()}${raw.substring(1)}';
+          },
+          titleTextStyle: const TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w800,
+            color: _onSurfaceStrong,
+          ),
+          leftChevronIcon: Icon(
+            Icons.chevron_left_rounded,
+            color: _textSecondary.withValues(alpha: 0.7),
+            size: 26,
+          ),
+          rightChevronIcon: Icon(
+            Icons.chevron_right_rounded,
+            color: _textSecondary.withValues(alpha: 0.7),
+            size: 26,
+          ),
+          headerPadding: const EdgeInsets.symmetric(vertical: 8),
+        ),
+        daysOfWeekHeight: 28,
+        daysOfWeekStyle: DaysOfWeekStyle(
+          weekdayStyle: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.4,
+            color: _textSecondary.withValues(alpha: 0.75),
+          ),
+          weekendStyle: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.4,
+            color: _textSecondary.withValues(alpha: 0.75),
+          ),
+        ),
+        enabledDayPredicate: (d) => !_isPastDay(d),
+        rowHeight: 42,
+        selectedDayPredicate: (d) =>
+            _selectedDay != null && isSameDay(d, _selectedDay),
+        eventLoader: _rdvsForDay,
+        startingDayOfWeek: StartingDayOfWeek.monday,
+        onDaySelected: (sel, foc) {
+          if (_isPastDay(sel)) return;
+          setState(() {
+            _selectedDay = _stripTime(sel);
+            _focusedDay = foc;
+            _selectedHeure = null;
+          });
+          _refreshOccupiedSlots();
+        },
+        onPageChanged: (f) {
+          setState(() => _focusedDay = f);
+          _loadMonth();
+        },
+        calendarStyle: CalendarStyle(
+          outsideDaysVisible: true,
+          cellMargin: const EdgeInsets.all(6),
+          defaultTextStyle: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: _onSurfaceStrong,
+          ),
+          weekendTextStyle: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: _onSurfaceStrong,
+          ),
+          outsideTextStyle: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: _textSecondary.withValues(alpha: 0.35),
+          ),
+          todayDecoration: BoxDecoration(
+            color: _primaryBlue.withValues(alpha: 0.12),
+            shape: BoxShape.circle,
+          ),
+          todayTextStyle: const TextStyle(
+            color: _primaryBlue,
+            fontWeight: FontWeight.w700,
+            fontSize: 14,
+          ),
+          selectedDecoration: BoxDecoration(
+            color: _primaryBlue,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: _primaryBlue.withValues(alpha: 0.35),
+                blurRadius: 10,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+          selectedTextStyle: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+            fontSize: 14,
+          ),
+          disabledTextStyle: TextStyle(
+            fontSize: 14,
+            color: _textSecondary.withValues(alpha: 0.35),
+          ),
+          markersMaxCount: 3,
+          markerSize: 5,
+          markerDecoration: const BoxDecoration(
+            color: _calMarkerBusy,
+            shape: BoxShape.circle,
+          ),
+        ),
+        calendarBuilders: CalendarBuilders<_RdvRow>(
+          dowBuilder: (context, day) {
+            const labels = ['LUN', 'MAR', 'MER', 'JEU', 'VEN', 'SAM', 'DIM'];
+            return Center(
+              child: Text(
+                labels[day.weekday - 1],
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: _textSecondary.withValues(alpha: 0.75),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlanifierButton() {
+    final enabled = _selectedDay != null &&
+        _selectedHeure != null &&
+        !_booking &&
+        !_isPastDay(_selectedDay!);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+      decoration: BoxDecoration(
+        color: _pageBg,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 12,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            gradient: LinearGradient(
+              colors: enabled
+                  ? [_primaryBlue, _primaryBlueDark]
+                  : [
+                      _primaryBlue.withValues(alpha: 0.45),
+                      _primaryBlueDark.withValues(alpha: 0.45),
+                    ],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+            boxShadow: enabled
+                ? [
+                    BoxShadow(
+                      color: _primaryBlue.withValues(alpha: 0.35),
+                      blurRadius: 14,
+                      offset: const Offset(0, 6),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: enabled ? _confirmSelectedSlot : null,
+              borderRadius: BorderRadius.circular(14),
+              child: SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: Center(
+                  child: _booking
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text(
+                          'Planifier la séance',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMainContent() {
+    if (_loading) {
+      return const Center(
+        child: CircularProgressIndicator(color: _primaryBlue),
       );
     }
     if (_error != null) {
@@ -330,425 +773,36 @@ class _DoctorTeleconsultAgendaScreenState
         ),
       );
     }
+
     return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-        Padding(
-          padding: EdgeInsets.fromLTRB(horizontalPad, 8, horizontalPad, 4),
-          child: Text(
-            'Patient : ${widget.patientName}',
+          const Text(
+            'Prendre rendez-vous',
             style: TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: isVeryCompact ? 14 : (isPhone ? 15 : 16),
+              fontSize: 26,
+              fontWeight: FontWeight.w800,
               color: _onSurfaceStrong,
-            ),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        Padding(
-          padding: EdgeInsets.fromLTRB(horizontalPad, 0, horizontalPad, 4),
-          child: Row(
-            children: [
-              TextButton(
-                style: TextButton.styleFrom(
-                  minimumSize: const Size(48, 48),
-                  foregroundColor: _skyDark,
-                ),
-                onPressed: _goToday,
-                child: const Text('Aujourd\'hui'),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  '$_countMonth rendez-vous ce mois',
-                  textAlign: TextAlign.right,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.blueGrey.shade700,
-                    fontWeight: FontWeight.w600,
-                    fontSize: isVeryCompact ? 11 : (isPhone ? 12 : 13),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        Padding(
-          padding: EdgeInsets.fromLTRB(horizontalPad + 4, 0, horizontalPad + 4, 6),
-          child: Wrap(
-            spacing: 12,
-            runSpacing: 6,
-            children: [
-              _agendaLegendDot(_calMarkerDone, 'Terminé'),
-              _agendaLegendDot(_calMarkerBusy, 'À venir / autre'),
-            ],
-          ),
-        ),
-        ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: calMaxH),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: _calShellBg,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.blueGrey.shade100),
-              ),
-              child: TableCalendar<_RdvRow>(
-                locale: 'fr_FR',
-                firstDay: DateTime.utc(2020, 1, 1),
-                lastDay: DateTime.utc(2035, 12, 31),
-                focusedDay: _focusedDay,
-                calendarFormat: CalendarFormat.month,
-                availableCalendarFormats: const {
-                  CalendarFormat.month: 'Mois',
-                },
-                sixWeekMonthsEnforced: false,
-                headerVisible: true,
-                daysOfWeekHeight: 28,
-                daysOfWeekStyle: DaysOfWeekStyle(
-                  weekdayStyle: TextStyle(
-                    fontSize: isVeryCompact ? 10 : 11,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.blueGrey.shade600,
-                  ),
-                  weekendStyle: TextStyle(
-                    fontSize: isVeryCompact ? 10 : 11,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.blueGrey.shade500,
-                  ),
-                ),
-                headerStyle: HeaderStyle(
-                  formatButtonVisible: false,
-                  titleCentered: true,
-                  titleTextStyle: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: _calInk,
-                  ),
-                  leftChevronIcon: Icon(
-                    Icons.chevron_left_rounded,
-                    color: Colors.blueGrey.shade700,
-                    size: isVeryCompact ? 24 : 28,
-                  ),
-                  rightChevronIcon: Icon(
-                    Icons.chevron_right_rounded,
-                    color: Colors.blueGrey.shade700,
-                    size: isVeryCompact ? 24 : 28,
-                  ),
-                  headerMargin: const EdgeInsets.only(bottom: 4),
-                ),
-                enabledDayPredicate: (d) => !_isPastDay(d),
-                rowHeight: rowHeight,
-                selectedDayPredicate: (d) =>
-                    _selectedDay != null && isSameDay(d, _selectedDay),
-                eventLoader: _rdvsForDay,
-                startingDayOfWeek: StartingDayOfWeek.monday,
-                onDaySelected: (sel, foc) async {
-                  if (_isPastDay(sel)) return;
-                  setState(() {
-                    _selectedDay = _stripTime(sel);
-                    _hoveredDay = _stripTime(sel);
-                    _focusedDay = foc;
-                  });
-                },
-                onPageChanged: (f) {
-                  _focusedDay = f;
-                  _hoveredDay = null;
-                  _loadMonth();
-                },
-                calendarStyle: CalendarStyle(
-                  outsideDaysVisible: false,
-                  cellMargin: const EdgeInsets.all(2),
-                  defaultTextStyle: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: _calInk,
-                  ),
-                  weekendTextStyle: TextStyle(
-                    fontSize: isVeryCompact ? 12 : 13,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.blueGrey.shade500,
-                  ),
-                  outsideTextStyle: TextStyle(
-                    fontSize: isVeryCompact ? 12 : 13,
-                    color: Colors.blueGrey.shade300,
-                  ),
-                  selectedDecoration: const BoxDecoration(
-                    color: _skyDark,
-                    shape: BoxShape.circle,
-                  ),
-                  selectedTextStyle: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 13,
-                  ),
-                  todayDecoration: BoxDecoration(
-                    color: _skyDark.withValues(alpha: 0.2),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: _skyDark.withValues(alpha: 0.75),
-                      width: 2,
-                    ),
-                  ),
-                  todayTextStyle: const TextStyle(
-                    color: _calTodayText,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 13,
-                  ),
-                  markersMaxCount: 6,
-                  markerDecoration: const BoxDecoration(
-                    color: _calMarkerDone,
-                    shape: BoxShape.circle,
-                  ),
-                  markersAlignment: Alignment.bottomCenter,
-                  disabledTextStyle: TextStyle(
-                    fontSize: isVeryCompact ? 12 : 13,
-                    color: Colors.blueGrey.shade300,
-                  ),
-                ),
-                calendarBuilders: CalendarBuilders<_RdvRow>(
-                  defaultBuilder: (context, day, focusedDay) {
-                    return MouseRegion(
-                      onEnter: (_) {
-                        if (!mounted) return;
-                        setState(() => _hoveredDay = _stripTime(day));
-                      },
-                      onExit: (_) {
-                        if (!mounted) return;
-                        setState(() {
-                          if (_hoveredDay != null && isSameDay(_hoveredDay, day)) {
-                            _hoveredDay = null;
-                          }
-                        });
-                      },
-                      child: Center(
-                        child: Text(
-                          '${day.day}',
-                          style: TextStyle(
-                            fontSize: isVeryCompact ? 12 : 13,
-                            fontWeight: FontWeight.w600,
-                            color: _calInk,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                  todayBuilder: (context, day, focusedDay) {
-                    return MouseRegion(
-                      onEnter: (_) {
-                        if (!mounted) return;
-                        setState(() => _hoveredDay = _stripTime(day));
-                      },
-                      onExit: (_) {
-                        if (!mounted) return;
-                        setState(() {
-                          if (_hoveredDay != null && isSameDay(_hoveredDay, day)) {
-                            _hoveredDay = null;
-                          }
-                        });
-                      },
-                      child: Center(
-                        child: Container(
-                          width: isVeryCompact ? 30 : 34,
-                          height: isVeryCompact ? 30 : 34,
-                          decoration: BoxDecoration(
-                            color: _skyDark.withValues(alpha: 0.2),
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: _skyDark.withValues(alpha: 0.75),
-                              width: 2,
-                            ),
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            '${day.day}',
-                            style: TextStyle(
-                              color: _calTodayText,
-                              fontWeight: FontWeight.w800,
-                              fontSize: isVeryCompact ? 12 : 13,
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                  selectedBuilder: (context, day, focusedDay) {
-                    return MouseRegion(
-                      onEnter: (_) {
-                        if (!mounted) return;
-                        setState(() => _hoveredDay = _stripTime(day));
-                      },
-                      onExit: (_) {
-                        if (!mounted) return;
-                        setState(() {
-                          if (_hoveredDay != null && isSameDay(_hoveredDay, day)) {
-                            _hoveredDay = null;
-                          }
-                        });
-                      },
-                      child: Center(
-                        child: Container(
-                          width: isVeryCompact ? 30 : 34,
-                          height: isVeryCompact ? 30 : 34,
-                          decoration: const BoxDecoration(
-                            color: _skyDark,
-                            shape: BoxShape.circle,
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            '${day.day}',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w800,
-                              fontSize: isVeryCompact ? 12 : 13,
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                  markerBuilder: (context, day, events) {
-                    if (events.isEmpty) return null;
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 2),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          for (final e in events)
-                            Container(
-                              margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                              width: 6,
-                              height: 6,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: e.statutEffectif == 'termine'
-                                    ? _calMarkerDone
-                                    : _calMarkerBusy,
-                              ),
-                            ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ),
+              letterSpacing: -0.5,
             ),
           ),
-        ),
-        if (_hoveredDay != null)
-          Padding(
-            padding: EdgeInsets.fromLTRB(horizontalPad, 8, horizontalPad, 4),
-            child: Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.blueGrey.shade100),
-              ),
-              child: Builder(
-                builder: (_) {
-                  final day = _hoveredDay!;
-                  final rows = _rdvsForDay(day)..sort((a, b) => a.heure.compareTo(b.heure));
-                  if (rows.isEmpty) {
-                    return Text(
-                      'Aucun rendez-vous le ${_humanDate(day)}',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: _onSurfaceStrong.withValues(alpha: 0.75),
-                      ),
-                    );
-                  }
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Rendez-vous du ${_humanDate(day)}',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          color: _onSurfaceStrong,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      for (final r in rows)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 4),
-                          child: Text(
-                            '${r.patientNom} — ${_humanDate(day)} à ${r.heure}',
-                            style: const TextStyle(fontSize: 13),
-                          ),
-                        ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ),
-        Padding(
-          padding: EdgeInsets.fromLTRB(horizontalPad, 8, horizontalPad, 12),
-          child: Text(
-            widget.embeddedAsDialog
-                ? 'Choisissez une date, puis ouvrez le jour pour fixer ou modifier '
-                    'un rendez-vous (date et heure modifiables via ✏️).'
-                : 'Choisissez une date future pour voir les créneaux '
-                    'et fixer ou modifier un rendez-vous.',
-            textAlign: TextAlign.center,
+          const SizedBox(height: 8),
+          Text(
+            'Sélectionnez le créneau qui convient le mieux pour la téléconsultation avec ${widget.patientName}.',
             style: TextStyle(
-              fontSize: isVeryCompact ? 12 : (widget.embeddedAsDialog ? 13 : 14),
-              color: _onSurfaceStrong.withValues(alpha: 0.88),
+              fontSize: 14,
+              color: _textSecondary.withValues(alpha: 0.95),
+              height: 1.45,
             ),
           ),
-        ),
-        Padding(
-          padding: EdgeInsets.fromLTRB(horizontalPad, 0, horizontalPad, 12),
-          child: Wrap(
-            spacing: 12,
-            runSpacing: 10,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              SizedBox(
-                width: isPhone ? double.infinity : math.max(width * 0.42, 180),
-                child: Text(
-                  _selectedDay == null
-                      ? 'Sélectionnez une date'
-                      : '${_selectedDay!.day}/${_selectedDay!.month}/${_selectedDay!.year}',
-                  style: TextStyle(
-                    fontSize: isVeryCompact ? 12 : 13,
-                    color: _onSurfaceStrong.withValues(alpha: 0.7),
-                  ),
-                ),
-              ),
-              Tooltip(
-                message: (_selectedDay == null || _isPastDay(_selectedDay!))
-                    ? 'Veuillez sélectionner une date'
-                    : 'Fixer un rendez-vous',
-                child: FilledButton(
-                  onPressed: (_selectedDay == null || _isPastDay(_selectedDay!))
-                      ? null
-                      : () => _openQuickBookingClock(_selectedDay!),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: _skyDark,
-                    foregroundColor: Colors.white,
-                    minimumSize: Size(
-                      isPhone ? double.infinity : 180,
-                      isVeryCompact ? 42 : 46,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text('Fixer un rendez-vous'),
-                ),
-              ),
-            ],
-          ),
-        ),
+          const SizedBox(height: 20),
+          _buildCalendarCard(),
+          const SizedBox(height: 16),
+          _buildInfoBox(),
+          const SizedBox(height: 16),
+          _buildTimeSlotsSection(),
         ],
       ),
     );
@@ -756,64 +810,32 @@ class _DoctorTeleconsultAgendaScreenState
 
   @override
   Widget build(BuildContext context) {
-    final sz = MediaQuery.sizeOf(context);
-    final isVeryCompact = sz.width < 360;
-    final calMaxH = widget.embeddedAsDialog
-        ? math.min(isVeryCompact ? 340.0 : 400.0, sz.height * (isVeryCompact ? 0.48 : 0.52))
-        : sz.height * (isVeryCompact ? 0.52 : 0.58);
-
-    final body = _buildMainContent(calMaxH);
-
     if (widget.embeddedAsDialog) {
       return Material(
-        color: _surfaceCalm,
+        color: _pageBg,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              color: _skyDark,
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-              child: SafeArea(
-                bottom: false,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Planifier la téléconsultation',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w800,
-                            ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close_rounded, color: Colors.white),
-                      constraints: const BoxConstraints(
-                        minWidth: 48,
-                        minHeight: 48,
-                      ),
-                      onPressed: widget.onClose,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            Expanded(child: body),
+            SafeArea(bottom: false, child: _buildPlanningHeader()),
+            Expanded(child: _buildMainContent()),
+            _buildPlanifierButton(),
           ],
         ),
       );
     }
 
     return Scaffold(
-      backgroundColor: _surfaceCalm,
-      appBar: AppBar(
-        title: const Text('Planifier la téléconsultation'),
-        backgroundColor: _skyDark,
-        foregroundColor: Colors.white,
+      backgroundColor: _pageBg,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildPlanningHeader(),
+            Expanded(child: _buildMainContent()),
+            _buildPlanifierButton(),
+          ],
+        ),
       ),
-      body: SafeArea(child: body),
     );
   }
 }

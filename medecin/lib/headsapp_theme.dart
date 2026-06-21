@@ -19,6 +19,12 @@ class HeadsAppColors {
   static const Color success = Color(0xFF1F9D68);
   static const Color warning = Color(0xFFF59E0B);
   static const Color danger = Color(0xFFE14D65);
+
+  /// Écrans d'authentification (login, inscription, reset).
+  static const Color authInputFill = Color(0xFFE9E9EB);
+  static const Color authGradientStart = Color(0xFF00B4DB);
+  static const Color authGradientEnd = Color(0xFF0062BD);
+  static const Color authInfoBackground = Color(0xFFEEF4FB);
 }
 
 class HeadsAppMetrics {

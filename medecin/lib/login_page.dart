@@ -10,7 +10,7 @@ import 'session_keys.dart';
 import 'signup_page.dart';
 import 'utils/doctor_session_utils.dart';
 import 'utils/doctor_ui_utils.dart';
-import 'widgets/headsapp_brand_widgets.dart';
+import 'widgets/auth_ui_widgets.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -95,221 +95,126 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: HeadsAppGradientBackdrop(
-        child: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              return SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 16,
-                ),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    // Sur certains appareils, le 1er layout peut être très petit (voire 0),
-                    // ce qui rendait minHeight négatif et faisait planter l'écran.
-                    minHeight: (constraints.maxHeight - 32).clamp(0, double.infinity),
+    return AuthScaffold(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 16),
+          const AuthBrandHeader(useLogoAsset: true, vertical: true),
+          const SizedBox(height: 32),
+          const AuthTitleBlock(
+            title: 'Bon retour parmi nous',
+            subtitle: 'Veuillez entrer vos identifiants pour continuer.',
+          ),
+          const SizedBox(height: 32),
+          Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                AuthLabeledField(
+                  label: 'Adresse e-mail',
+                  child: TextFormField(
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: authInputDecoration(
+                      hintText: 'nom@exemple.com',
+                      prefixIcon: Icons.email_outlined,
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Veuillez entrer votre adresse e-mail';
+                      }
+                      if (!value.contains('@')) {
+                        return 'Adresse e-mail invalide';
+                      }
+                      return null;
+                    },
                   ),
-                  child: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 420),
-                          child: HeadsAppSurfaceCard(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Center(
-                                child: HeadsAppHeroBadge(
-                                  icon: Icons.medical_services_rounded,
-                                ),
-                              ),
-                              const SizedBox(height: 24),
-                              Text(
-                                'Bienvenue, Docteur',
-                                textAlign: TextAlign.left,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .headlineMedium
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                      color: HeadsAppColors.textPrimary,
-                                    ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Connectez-vous pour accéder à votre espace médecin.',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodyMedium
-                                    ?.copyWith(
-                                      color: HeadsAppColors.textSecondary,
-                                    ),
-                              ),
-                              const SizedBox(height: 24),
-                              Form(
-                                key: _formKey,
-                                child: Column(
-                                  children: [
-                                    TextFormField(
-                                      controller: _emailController,
-                                      keyboardType: TextInputType.emailAddress,
-                                      decoration: InputDecoration(
-                                        labelText: 'Adresse email',
-                                        prefixIcon: Icon(
-                                          Icons.email_rounded,
-                                          color: HeadsAppColors.brandAccent,
-                                        ),
-                                        border: OutlineInputBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(16),
-                                          borderSide: BorderSide.none,
-                                        ),
-                                      ),
-                                      validator: (value) {
-                                        if (value == null || value.isEmpty) {
-                                          return 'Veuillez entrer votre email';
-                                        }
-                                        if (!value.contains('@')) {
-                                          return 'Email invalide';
-                                        }
-                                        return null;
-                                      },
-                                    ),
-                                    const SizedBox(height: 16),
-                                    TextFormField(
-                                      controller: _passwordController,
-                                      obscureText: _obscurePassword,
-                                      decoration: InputDecoration(
-                                        labelText: 'Mot de passe',
-                                        prefixIcon: Icon(
-                                          Icons.lock_rounded,
-                                          color: HeadsAppColors.brandAccent,
-                                        ),
-                                        border: OutlineInputBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(16),
-                                          borderSide: BorderSide.none,
-                                        ),
-                                        suffixIcon: IconButton(
-                                          icon: Icon(
-                                            _obscurePassword
-                                                ? Icons.visibility_off_rounded
-                                                : Icons.visibility_rounded,
-                                            color: Colors.grey,
-                                          ),
-                                          onPressed: () {
-                                            setState(() {
-                                              _obscurePassword =
-                                                  !_obscurePassword;
-                                            });
-                                          },
-                                        ),
-                                      ),
-                                      validator: (value) {
-                                        if (value == null || value.isEmpty) {
-                                          return 'Veuillez entrer votre mot de passe';
-                                        }
-                                        return null;
-                                      },
-                                    ),
-                                    const SizedBox(height: 12),
-                                    Align(
-                                      alignment: Alignment.centerRight,
-                                      child: TextButton(
-                                        onPressed: () {
-                                          Navigator.of(context).push(
-                                            MaterialPageRoute(
-                                              builder: (_) =>
-                                                  const ResetPasswordPage(),
-                                            ),
-                                          );
-                                        },
-                                        child: Text(
-                                          'Mot de passe oublié ?',
-                                          style: const TextStyle(
-                                            color: HeadsAppColors.brandPrimary,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    SizedBox(
-                                      width: double.infinity,
-                                      child: ElevatedButton(
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor:
-                                              HeadsAppColors.brandPrimary,
-                                          foregroundColor: Colors.white,
-                                          padding: const EdgeInsets.symmetric(
-                                            vertical: 16,
-                                          ),
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(18),
-                                          ),
-                                          elevation: 4,
-                                          shadowColor:
-                                              HeadsAppColors.brandPrimary
-                                                  .withValues(alpha: 0.28),
-                                        ),
-                                        onPressed: _onLogin,
-                                        child: const Text(
-                                          'SE CONNECTER',
-                                          style: TextStyle(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              Wrap(
-                                alignment: WrapAlignment.center,
-                                crossAxisAlignment: WrapCrossAlignment.center,
-                                spacing: 4,
-                                children: [
-                                  const Text(
-                                    "Vous n'avez pas de compte médecin ?",
-                                    textAlign: TextAlign.center,
-                                  ),
-                                  TextButton(
-                                    onPressed: () {
-                                      Navigator.of(context).push(
-                                        MaterialPageRoute(
-                                          builder: (_) => const SignupPage(),
-                                        ),
-                                      );
-                                    },
-                                    child: Text(
-                                      "S'inscrire",
-                                      style: TextStyle(
-                                        color: HeadsAppColors.brandPrimary,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Mot de passe',
+                        style: TextStyle(
+                          color: Color(0xFF374151),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const ResetPasswordPage(),
                           ),
+                        );
+                      },
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text(
+                        'Mot de passe oublié ?',
+                        style: TextStyle(
+                          color: HeadsAppColors.brandPrimary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
                         ),
-                        ),
-                      ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _passwordController,
+                  obscureText: _obscurePassword,
+                  decoration: authInputDecoration(
+                    hintText: '••••••••',
+                    prefixIcon: Icons.lock_outline_rounded,
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscurePassword
+                            ? Icons.visibility_off_outlined
+                            : Icons.visibility_outlined,
+                        color: HeadsAppColors.textTertiary,
+                        size: 20,
+                      ),
+                      onPressed: () {
+                        setState(() => _obscurePassword = !_obscurePassword);
+                      },
                     ),
                   ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Veuillez entrer votre mot de passe';
+                    }
+                    return null;
+                  },
                 ),
+                const SizedBox(height: 28),
+                AuthSolidButton(
+                  label: 'Se connecter',
+                  onPressed: _onLogin,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 28),
+          AuthFooterLink(
+            prompt: 'Vous n\'avez pas de compte ?',
+            actionLabel: 'S\'inscrire',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SignupPage()),
               );
             },
           ),
-        ),
+        ],
       ),
     );
   }

@@ -1,12 +1,15 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:intl/date_symbol_data_local.dart';
+import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 import 'chat_medecin_page.dart';
 import 'headsapp_theme.dart';
 import 'services/api_service.dart';
 import 'utils/doctor_ui_utils.dart';
+import 'widgets/headsapp_logo_text.dart';
 
 class AgendaPage extends StatefulWidget {
   const AgendaPage({
@@ -23,8 +26,10 @@ class AgendaPage extends StatefulWidget {
 }
 
 class _AgendaPageState extends State<AgendaPage> {
-  static const Color _primary = HeadsAppColors.brandPrimary;
-  static const Color _bg = HeadsAppColors.surfaceAlt;
+  static const Color _brandBlue = Color(0xFF2459A8);
+  static const Color _background = Color(0xFFF5F9FC);
+  static const Color _textPrimary = HeadsAppColors.textPrimary;
+  static const Color _textSecondary = HeadsAppColors.textSecondary;
 
   bool _loading = true;
   String? _error;
@@ -40,6 +45,7 @@ class _AgendaPageState extends State<AgendaPage> {
   @override
   void initState() {
     super.initState();
+    initializeDateFormatting('fr_FR', null);
     _load();
     _refreshTimer = Timer.periodic(
       const Duration(seconds: 60),
@@ -365,325 +371,386 @@ class _AgendaPageState extends State<AgendaPage> {
     return items;
   }
 
+  Widget _buildHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 16, 0),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: () => Navigator.of(context).maybePop(),
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+            color: _textPrimary,
+            style: IconButton.styleFrom(
+              backgroundColor: Colors.white,
+              side: const BorderSide(color: HeadsAppColors.border),
+            ),
+          ),
+          Expanded(
+            child: HeadsAppLogoText(
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(width: 48),
+        ],
+      ),
+    );
+  }
+
+  String _formatDayHeader(DateTime d) {
+    final raw = DateFormat('EEEE d MMMM', 'fr_FR').format(d);
+    if (raw.isEmpty) return raw;
+    return '${raw[0].toUpperCase()}${raw.substring(1)}';
+  }
+
+  Widget _buildCalendarCard() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: HeadsAppColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: TableCalendar<Map<String, dynamic>>(
+        locale: 'fr_FR',
+        startingDayOfWeek: StartingDayOfWeek.monday,
+        firstDay: DateTime.now().subtract(const Duration(days: 365)),
+        lastDay: DateTime.now().add(const Duration(days: 365 * 2)),
+        focusedDay: _focusedDay,
+        selectedDayPredicate: (day) => _sameDay(day, _selectedDay),
+        eventLoader: _eventsForDay,
+        calendarFormat: CalendarFormat.month,
+        availableCalendarFormats: const {CalendarFormat.month: 'Mois'},
+        headerStyle: HeaderStyle(
+          formatButtonVisible: false,
+          titleCentered: true,
+          leftChevronIcon: const Icon(
+            Icons.chevron_left_rounded,
+            color: _brandBlue,
+            size: 26,
+          ),
+          rightChevronIcon: const Icon(
+            Icons.chevron_right_rounded,
+            color: _brandBlue,
+            size: 26,
+          ),
+          titleTextStyle: const TextStyle(
+            color: _textPrimary,
+            fontSize: 17,
+            fontWeight: FontWeight.w800,
+          ),
+          headerPadding: const EdgeInsets.symmetric(vertical: 8),
+        ),
+        daysOfWeekStyle: DaysOfWeekStyle(
+          weekdayStyle: TextStyle(
+            fontSize: 12,
+            color: _textSecondary.withValues(alpha: 0.85),
+            fontWeight: FontWeight.w500,
+          ),
+          weekendStyle: TextStyle(
+            fontSize: 12,
+            color: _textSecondary.withValues(alpha: 0.85),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        onDaySelected: (selectedDay, focusedDay) {
+          setState(() {
+            _selectedDay = DateTime(
+              selectedDay.year,
+              selectedDay.month,
+              selectedDay.day,
+            );
+            _focusedDay = focusedDay;
+          });
+        },
+        onPageChanged: (focusedDay) {
+          setState(() => _focusedDay = focusedDay);
+        },
+        calendarStyle: CalendarStyle(
+          outsideDaysVisible: true,
+          cellMargin: const EdgeInsets.all(6),
+          defaultTextStyle: const TextStyle(
+            fontWeight: FontWeight.w600,
+            color: _textPrimary,
+            fontSize: 14,
+          ),
+          weekendTextStyle: const TextStyle(
+            fontWeight: FontWeight.w600,
+            color: _textPrimary,
+            fontSize: 14,
+          ),
+          outsideTextStyle: TextStyle(
+            fontWeight: FontWeight.w500,
+            color: _textSecondary.withValues(alpha: 0.35),
+            fontSize: 14,
+          ),
+          todayTextStyle: const TextStyle(
+            fontWeight: FontWeight.w700,
+            color: _textPrimary,
+            fontSize: 14,
+          ),
+          todayDecoration: BoxDecoration(
+            color: _brandBlue.withValues(alpha: 0.12),
+            shape: BoxShape.circle,
+          ),
+          selectedDecoration: BoxDecoration(
+            color: _brandBlue,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: _brandBlue.withValues(alpha: 0.35),
+                blurRadius: 12,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+          selectedTextStyle: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+            fontSize: 14,
+          ),
+          markerSize: 5,
+          markerMargin: const EdgeInsets.only(top: 4),
+          markersMaxCount: 1,
+          markerDecoration: const BoxDecoration(
+            color: HeadsAppColors.brandAccent,
+            shape: BoxShape.circle,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDaySectionHeader(int count) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            _formatDayHeader(_selectedDay),
+            style: const TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              color: _textPrimary,
+            ),
+          ),
+        ),
+        Text(
+          '$count rendez-vous',
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: _brandBlue,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmptyDayCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: HeadsAppColors.border),
+      ),
+      child: const Text(
+        'Aucun rendez-vous pour ce jour.',
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          fontSize: 14,
+          color: _textSecondary,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAppointmentCard(Map<String, dynamic> it) {
+    final dt = _slotLocal(it);
+    final dur = (it['duree'] as num?)?.toInt() ?? 30;
+    final canJoin = dt != null && _canJoin(dt, dur);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: HeadsAppColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            dt == null ? '--:--' : _fmtTime(dt),
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: _brandBlue,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              patientAvatarForDoctor(
+                name: (it['patientNom'] ?? it['patientName'])?.toString() ??
+                    'Patient',
+                patientPhotoPath: it['patientPhotoPath']?.toString(),
+                radius: 20,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  (it['patientNom'] ?? it['patientName'])?.toString() ??
+                      'Patient',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: _textPrimary,
+                  ),
+                ),
+              ),
+              if (it['agendaSource'] == 'tele')
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: HeadsAppColors.brandHighlight,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'Téléconsultation',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: _brandBlue,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            it['motif']?.toString().trim().isNotEmpty == true
+                ? it['motif'].toString()
+                : 'Téléconsultation',
+            style: const TextStyle(
+              fontSize: 12,
+              color: _textSecondary,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: 'Modifier',
+                  onPressed:
+                      _canManageSlot(it) ? () => _editSlot(it) : null,
+                  icon: const Icon(Icons.edit_rounded, color: _brandBlue),
+                ),
+                IconButton(
+                  tooltip: 'Supprimer',
+                  color: HeadsAppColors.danger,
+                  onPressed:
+                      _canManageSlot(it) ? () => _deleteSlot(it) : null,
+                  icon: const Icon(Icons.delete_outline_rounded),
+                ),
+                const SizedBox(width: 4),
+                FilledButton.icon(
+                  onPressed: canJoin ? () => _joinTeleconsult(it) : null,
+                  icon: const Icon(Icons.videocam_rounded, size: 18),
+                  label: const Text('Rejoindre'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _brandBlue,
+                    minimumSize: const Size(0, 40),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final todayCount = _eventsForDay(DateTime.now()).length;
+    final dayCount = _itemsSelectedDay.length;
+
+    Widget bodyContent;
+    if (_loading) {
+      bodyContent = const Center(child: CircularProgressIndicator(color: _brandBlue));
+    } else if (_error != null) {
+      bodyContent = Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(_error!, textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: _load,
+                child: const Text('Réessayer'),
+              ),
+            ],
+          ),
+        ),
+      );
+    } else {
+      bodyContent = RefreshIndicator(
+        onRefresh: _load,
+        color: _brandBlue,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          children: [
+            _buildCalendarCard(),
+            const SizedBox(height: 20),
+            _buildDaySectionHeader(dayCount),
+            const SizedBox(height: 12),
+            if (dayCount == 0)
+              _buildEmptyDayCard()
+            else
+              ..._itemsSelectedDay.map(_buildAppointmentCard),
+          ],
+        ),
+      );
+    }
 
     return Scaffold(
-      backgroundColor: _bg,
-      appBar: widget.embeddedInShell
-          ? null
-          : AppBar(
-              elevation: 0,
-              scrolledUnderElevation: 0,
-              centerTitle: true,
-              title: Text(
-                'Agenda · $todayCount rendez-vous aujourd\'hui',
-                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 20),
-              ),
-            ),
-      body: RefreshIndicator(
-        onRefresh: _load,
-        child: _loading
-            ? ListView(
-                children: const [
-                  SizedBox(height: 240),
-                  Center(child: CircularProgressIndicator()),
-                ],
-              )
-            : _error != null
-                ? ListView(
-                    children: [
-                      const SizedBox(height: 120),
-                      Center(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          child: Text(_error!, textAlign: TextAlign.center),
-                        ),
-                      ),
-                    ],
-                  )
-                : ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
-                    children: [
-                      if (widget.embeddedInShell) ...[
-                        Text(
-                          'Agenda · $todayCount rendez-vous aujourd\'hui',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleLarge
-                              ?.copyWith(
-                                fontWeight: FontWeight.w800,
-                                color: _primary,
-                              ),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                      Container(
-                        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              _primary.withValues(alpha: 0.22),
-                              const Color(0xFF87CEEB).withValues(alpha: 0.18),
-                            ],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: _primary.withValues(alpha: 0.25),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 38,
-                              height: 38,
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.92),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: const Icon(
-                                Icons.calendar_month_rounded,
-                                color: _primary,
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                'Rendez-vous enregistrés (téléconsultation)',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodyMedium
-                                    ?.copyWith(
-                                      color: const Color(0xFF2C3E50),
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Color(0x1A000000),
-                              blurRadius: 8,
-                              offset: Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: TableCalendar<Map<String, dynamic>>(
-                          firstDay: DateTime.now().subtract(
-                            const Duration(days: 365),
-                          ),
-                          lastDay: DateTime.now().add(
-                            const Duration(days: 365 * 2),
-                          ),
-                          focusedDay: _focusedDay,
-                          selectedDayPredicate: (day) =>
-                              _sameDay(day, _selectedDay),
-                          eventLoader: _eventsForDay,
-                          calendarFormat: CalendarFormat.month,
-                          availableCalendarFormats: const {
-                            CalendarFormat.month: 'Mois',
-                          },
-                          headerStyle: const HeaderStyle(
-                            formatButtonVisible: false,
-                            titleCentered: true,
-                          ),
-                          onDaySelected: (selectedDay, focusedDay) {
-                            setState(() {
-                              _selectedDay = DateTime(
-                                selectedDay.year,
-                                selectedDay.month,
-                                selectedDay.day,
-                              );
-                              _focusedDay = focusedDay;
-                            });
-                          },
-                          onPageChanged: (focusedDay) {
-                            _focusedDay = focusedDay;
-                          },
-                          calendarStyle: CalendarStyle(
-                            markerDecoration: const BoxDecoration(
-                              color: Color(0xFFE1395F),
-                              shape: BoxShape.circle,
-                            ),
-                            todayDecoration: BoxDecoration(
-                              color: _primary.withValues(alpha: 0.25),
-                              shape: BoxShape.circle,
-                            ),
-                            selectedDecoration: const BoxDecoration(
-                              color: _primary,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      Text(
-                        'Rendez-vous du ${_fmtDate(_selectedDay)}',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
-                      ),
-                      const SizedBox(height: 10),
-                      if (_itemsSelectedDay.isEmpty)
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: HeadsAppColors.surface,
-                            borderRadius: BorderRadius.circular(HeadsAppMetrics.compactRadius),
-                            border: Border.all(color: HeadsAppColors.border),
-                          ),
-                          child: const Text(
-                            'Aucun rendez-vous pour ce jour.',
-                            textAlign: TextAlign.center,
-                          ),
-                        )
-                      else
-                        ..._itemsSelectedDay.map((it) {
-                          final dt = _slotLocal(it);
-                          final dur = (it['duree'] as num?)?.toInt() ?? 30;
-                          final canJoin = dt != null && _canJoin(dt, dur);
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: HeadsAppColors.surface,
-                              borderRadius: BorderRadius.circular(HeadsAppMetrics.compactRadius),
-                              border: Border.all(color: HeadsAppColors.border),
-                              boxShadow: const [
-                                BoxShadow(
-                                  color: Color(0x1A000000),
-                                  blurRadius: 8,
-                                  offset: Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  dt == null ? '--:--' : _fmtTime(dt),
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                    color: _primary,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Row(
-                                  children: [
-                                    patientAvatarForDoctor(
-                                      name: (it['patientNom'] ??
-                                              it['patientName'])
-                                          ?.toString() ??
-                                          'Patient',
-                                      patientPhotoPath: it['patientPhotoPath']
-                                          ?.toString(),
-                                      radius: 20,
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Text(
-                                        (it['patientNom'] ?? it['patientName'])
-                                                ?.toString() ??
-                                            'Patient',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                    if (it['agendaSource'] == 'tele')
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 4,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFF4FA8D5)
-                                              .withValues(alpha: 0.15),
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                        ),
-                                        child: const Text(
-                                          'Téléconsultation',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w700,
-                                            color: Color(0xFF4FA8D5),
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  it['motif']?.toString().trim().isNotEmpty ==
-                                          true
-                                      ? it['motif'].toString()
-                                      : 'Téléconsultation',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Color(0xFF64748B),
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Align(
-                                  alignment: Alignment.centerRight,
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      IconButton(
-                                        tooltip: 'Modifier',
-                                        onPressed: _canManageSlot(it)
-                                            ? () => _editSlot(it)
-                                            : null,
-                                        icon: const Icon(Icons.edit_rounded),
-                                      ),
-                                      IconButton(
-                                        tooltip: 'Supprimer',
-                                        color: Colors.red,
-                                        onPressed: _canManageSlot(it)
-                                            ? () => _deleteSlot(it)
-                                            : null,
-                                        icon:
-                                            const Icon(Icons.delete_outline_rounded),
-                                      ),
-                                      const SizedBox(width: 4),
-                                      FilledButton.icon(
-                                        onPressed: canJoin
-                                            ? () => _joinTeleconsult(it)
-                                            : null,
-                                        icon: const Icon(Icons.videocam_rounded),
-                                        label: const Text('Rejoindre'),
-                                        style: FilledButton.styleFrom(
-                                          minimumSize: const Size(0, 40),
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 10,
-                                          ),
-                                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                          visualDensity: VisualDensity.compact,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
-                    ],
-                  ),
+      backgroundColor: _background,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildHeader(),
+            Expanded(child: bodyContent),
+          ],
+        ),
       ),
     );
   }

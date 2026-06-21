@@ -13,7 +13,7 @@ import '../providers/call_provider.dart' show CallProvider, CallState;
 import '../services/api_service.dart';
 import '../services/call_chat_context.dart';
 import '../widgets/prescription_form_sheet.dart';
-import 'doctor_prescription_pdf_viewer_screen.dart';
+import 'consultation_finished_screen.dart';
 import '../services/webrtc_service.dart';
 
 /// Style du panneau « Signes vitaux » (cohérent avec le thème médecin).
@@ -90,6 +90,25 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
   Future<void> _onProviderUpdateAsync() async {
     if (!mounted || _done) return;
     final s = widget.callProvider.currentState;
+    if (s == CallState.termine && widget.callProvider.hadConnected) {
+      _done = true;
+      final p = widget.callProvider;
+      final navigator = Navigator.of(context);
+      await CallChatContext.onReloadMessages?.call();
+      if (!navigator.mounted) return;
+      navigator.pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => ConsultationFinishedScreen(
+            patientName: widget.displayName,
+            isVideoCall: widget.isVideoCall,
+            callDuration: p.callDuration,
+            endedAt: DateTime.now(),
+            onLeave: p.resetAfterCallUi,
+          ),
+        ),
+      );
+      return;
+    }
     if (s == CallState.termine ||
         s == CallState.refuse ||
         s == CallState.echec) {
@@ -133,40 +152,6 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
   }
 
   bool get _showVitalsButton => !CallChatContext.isPatientSide;
-
-  Future<void> _openLatestPrescription(BuildContext context) async {
-    final cid = CallChatContext.conversationId?.trim();
-    if (cid == null || cid.isEmpty) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Discussion non disponible.')),
-      );
-      return;
-    }
-    try {
-      final data = await ApiService.getLatestPrescription(conversationId: cid);
-      final pdfUrl = '${data['pdfUrl'] ?? ''}'.trim();
-      if (pdfUrl.isEmpty) throw Exception('empty');
-      final prescriptionId = '${data['prescriptionId'] ?? ''}'.trim();
-      if (!context.mounted) return;
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute<void>(
-          builder: (_) => DoctorPrescriptionPdfViewerScreen(
-            pdfUrl: pdfUrl,
-            conversationId: cid,
-            prescriptionId: prescriptionId.isEmpty ? null : prescriptionId,
-          ),
-        ),
-      );
-    } catch (_) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Aucune ordonnance disponible pour le moment.'),
-        ),
-      );
-    }
-  }
 
   void _openPrescriptionDuringCall(BuildContext context) {
     final cid = CallChatContext.conversationId?.trim();
@@ -488,163 +473,542 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
     );
   }
 
-  Widget _buildMediaArea(
-    bool hasRemoteStream,
-    bool hasLocalStream,
+  Widget _buildAudioCallShell(
+    BuildContext context,
     CallProvider provider,
     RTCPeerConnectionState quality,
+    BoxConstraints constraints,
   ) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      child: Column(
+    final isSmall = constraints.maxWidth < 980;
+    final content = _buildAudioCallContent(context, provider);
+
+    if (isSmall) {
+      return Stack(
         children: [
-          if (widget.isVideoCall)
-            Expanded(
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF0F172A),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: hasRemoteStream
-                            ? RTCVideoView(
-                                WebRtcService.instance.remoteRenderer,
-                                objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                                mirror: false,
-                              )
-                            : const Center(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.videocam_off_rounded,
-                                        color: Colors.white70, size: 34),
-                                    SizedBox(height: 8),
-                                    Text(
-                                      'En attente de la vidéo distante...',
-                                      style: TextStyle(
-                                        color: Colors.white70,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                      ),
-                    ),
+          Positioned.fill(child: content),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: AnimatedSlide(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic,
+              offset: _vitalsPanelOpen
+                  ? Offset.zero
+                  : const Offset(0, 1.04),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                height: constraints.maxHeight * 0.6,
+                decoration: BoxDecoration(
+                  color: _VitalsPanelStyle.bg,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(20),
                   ),
-                  if (hasLocalStream)
-                    Positioned(
-                      top: 12,
-                      right: 12,
-                      child: SizedBox(
-                        width: 110,
-                        height: 150,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: RTCVideoView(
-                            WebRtcService.instance.localRenderer,
-                            objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                            mirror: true,
-                          ),
-                        ),
-                      ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x22000000),
+                      blurRadius: 20,
+                      offset: Offset(0, -4),
+                    ),
+                  ],
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: _buildVitalsPanel(),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    final panelWidth = _vitalsPanelOpen ? constraints.maxWidth * 0.35 : 0.0;
+    return Row(
+      children: [
+        Expanded(child: content),
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+          width: panelWidth,
+          child: panelWidth < 2
+              ? const SizedBox.shrink()
+              : _buildVitalsPanel(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAudioCallContent(BuildContext context, CallProvider provider) {
+    const navy = Color(0xFF1A3D5F);
+    const textDark = Color(0xFF2D3748);
+
+    return Column(
+      children: [
+        const SizedBox(height: 20),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE8F2FC),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _AudioCallStatusDot(),
+              SizedBox(width: 8),
+              Text(
+                'EN COURS...',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.6,
+                  color: navy,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        Text(
+          provider.formattedDuration(),
+          style: const TextStyle(
+            fontSize: 32,
+            fontWeight: FontWeight.w800,
+            color: textDark,
+            letterSpacing: 1.2,
+            fontFeatures: [ui.FontFeature.tabularFigures()],
+          ),
+        ),
+        const Spacer(),
+        Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: HeadsAppColors.brandPrimary.withValues(alpha: 0.18),
+                blurRadius: 36,
+                spreadRadius: 6,
+              ),
+            ],
+          ),
+          child: CircleAvatar(
+            radius: 72,
+            backgroundColor: Colors.white,
+            backgroundImage: widget.avatarUrl != null &&
+                    widget.avatarUrl!.isNotEmpty
+                ? NetworkImage(widget.avatarUrl!)
+                : null,
+            child: widget.avatarUrl == null || widget.avatarUrl!.isEmpty
+                ? Icon(
+                    Icons.person_rounded,
+                    size: 72,
+                    color: Colors.grey.shade400,
+                  )
+                : null,
+          ),
+        ),
+        const SizedBox(height: 18),
+        Text(
+          widget.displayName.toLowerCase(),
+          style: const TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+            color: textDark,
+            letterSpacing: -0.3,
+          ),
+        ),
+        const Spacer(),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.lock_outline_rounded,
+              size: 14,
+              color: HeadsAppColors.textSecondary.withValues(alpha: 0.8),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'CHIFFREMENT DE BOUT EN BOUT ACTIF',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.5,
+                color: HeadsAppColors.textSecondary.withValues(alpha: 0.85),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          padding: const EdgeInsets.fromLTRB(16, 22, 16, 20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 24,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _DoctorAudioCallControl(
+                    icon: provider.isMuted
+                        ? Icons.mic_off_rounded
+                        : Icons.mic_none_rounded,
+                    label: 'MUET',
+                    active: provider.isMuted,
+                    onPressed: provider.toggleMute,
+                  ),
+                  _DoctorAudioCallControl(
+                    icon: provider.speakerOn
+                        ? Icons.volume_up_rounded
+                        : Icons.hearing_rounded,
+                    label: 'AUDIO',
+                    active: provider.speakerOn,
+                    onPressed: provider.toggleSpeaker,
+                  ),
+                  if (_showVitalsButton)
+                    _DoctorAudioCallControl(
+                      icon: Icons.monitor_heart_outlined,
+                      label: 'SIGNAUX',
+                      active: _vitalsPanelOpen,
+                      onPressed: () {
+                        setState(() {
+                          _vitalsPanelOpen = !_vitalsPanelOpen;
+                        });
+                      },
+                    ),
+                  if (_showVitalsButton)
+                    _DoctorAudioCallControl(
+                      icon: Icons.medical_services_outlined,
+                      label: 'ORDONN.',
+                      onPressed: () => _openPrescriptionDuringCall(context),
                     ),
                 ],
               ),
-            ),
-          if (!widget.isVideoCall) ...[
-            const SizedBox(height: 24),
-            CircleAvatar(
-              radius: 46,
-              backgroundImage: widget.avatarUrl != null && widget.avatarUrl!.isNotEmpty
-                  ? NetworkImage(widget.avatarUrl!)
-                  : null,
-              child: widget.avatarUrl == null || widget.avatarUrl!.isEmpty
-                  ? const Icon(Icons.person_rounded, size: 42)
-                  : null,
-            ),
-            const SizedBox(height: 12),
-          ],
-          if (widget.isVideoCall) const SizedBox(height: 12),
-          Text(
-            widget.displayName,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            provider.formattedDuration(),
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.circle, size: 10, color: _qualityColor(quality)),
-              const SizedBox(width: 6),
-              Text(_qualityLabel(quality)),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              _CallControlPill(
-                icon: provider.isMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
-                label: provider.isMuted ? 'Micro off' : 'Micro',
-                onPressed: provider.toggleMute,
-              ),
-              _CallControlPill(
-                icon: provider.speakerOn ? Icons.volume_up_rounded : Icons.hearing_rounded,
-                label: 'Audio',
-                onPressed: provider.toggleSpeaker,
-              ),
-              if (widget.isVideoCall)
-                _CallControlPill(
-                  icon: provider.cameraOn
-                      ? Icons.videocam_rounded
-                      : Icons.videocam_off_rounded,
-                  label: provider.cameraOn ? 'Caméra' : 'Caméra off',
-                  onPressed: provider.toggleCamera,
-                ),
-              if (_showVitalsButton)
-                _CallControlPill(
-                  icon: Icons.monitor_heart_rounded,
-                  label: 'Signes vitaux',
-                  active: _vitalsPanelOpen,
-                  onPressed: () {
-                    setState(() {
-                      _vitalsPanelOpen = !_vitalsPanelOpen;
-                    });
-                  },
-                ),
-              _CallControlPill(
-                icon: Icons.call_end_rounded,
-                label: 'Raccrocher',
-                danger: true,
-                onPressed: () {
-                  unawaited(provider.endCall());
-                },
+              const SizedBox(height: 22),
+              Column(
+                children: [
+                  Material(
+                    color: const Color(0xFFE53935),
+                    shape: const CircleBorder(),
+                    elevation: 2,
+                    shadowColor: const Color(0xFFE53935).withValues(alpha: 0.4),
+                    child: InkWell(
+                      onTap: () => unawaited(provider.endCall()),
+                      customBorder: const CircleBorder(),
+                      child: const Padding(
+                        padding: EdgeInsets.all(18),
+                        child: Icon(
+                          Icons.call_end_rounded,
+                          color: Colors.white,
+                          size: 30,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'FIN',
+                    style: TextStyle(
+                      color: Color(0xFFE53935),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
-          if (!widget.isVideoCall && WebRtcService.instance.isRemoteRendererReady)
-            SizedBox(
-              width: 1,
-              height: 1,
-              child: RTCVideoView(
-                WebRtcService.instance.remoteRenderer,
-                objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
-                mirror: false,
+        ),
+        if (WebRtcService.instance.isRemoteRendererReady)
+          SizedBox(
+            width: 1,
+            height: 1,
+            child: RTCVideoView(
+              WebRtcService.instance.remoteRenderer,
+              objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+              mirror: false,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildVideoCallShell(
+    BuildContext context,
+    CallProvider provider,
+    bool hasRemoteStream,
+    bool hasLocalStream,
+    BoxConstraints constraints,
+  ) {
+    final isSmall = constraints.maxWidth < 980;
+    final content = _buildVideoCallContent(
+      context,
+      provider,
+      hasRemoteStream,
+      hasLocalStream,
+    );
+
+    if (isSmall) {
+      return Stack(
+        children: [
+          Positioned.fill(child: content),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: AnimatedSlide(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic,
+              offset: _vitalsPanelOpen
+                  ? Offset.zero
+                  : const Offset(0, 1.04),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                height: constraints.maxHeight * 0.6,
+                decoration: BoxDecoration(
+                  color: _VitalsPanelStyle.bg,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(20),
+                  ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x22000000),
+                      blurRadius: 20,
+                      offset: Offset(0, -4),
+                    ),
+                  ],
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: _buildVitalsPanel(),
               ),
             ),
+          ),
         ],
-      ),
+      );
+    }
+
+    final panelWidth = _vitalsPanelOpen ? constraints.maxWidth * 0.35 : 0.0;
+    return Row(
+      children: [
+        Expanded(child: content),
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+          width: panelWidth,
+          child: panelWidth < 2
+              ? const SizedBox.shrink()
+              : _buildVitalsPanel(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildVideoCallContent(
+    BuildContext context,
+    CallProvider provider,
+    bool hasRemoteStream,
+    bool hasLocalStream,
+  ) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        ColoredBox(
+          color: const Color(0xFF0F172A),
+          child: hasRemoteStream
+              ? RTCVideoView(
+                  WebRtcService.instance.remoteRenderer,
+                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                  mirror: false,
+                )
+              : const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.videocam_off_rounded,
+                        color: Colors.white70,
+                        size: 40,
+                      ),
+                      SizedBox(height: 10),
+                      Text(
+                        'En attente de la vidéo distante...',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+        ),
+        if (hasLocalStream)
+          Positioned(
+            top: 16,
+            right: 16,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.35),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: SizedBox(
+                  width: 108,
+                  height: 148,
+                  child: RTCVideoView(
+                    WebRtcService.instance.localRenderer,
+                    objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                    mirror: true,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 9,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.48),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.shield_outlined,
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'SESSION SÉCURISÉE',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.6,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Text(
+                          provider.formattedDuration(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            fontFeatures: [
+                              ui.FontFeature.tabularFigures(),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 14,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(32),
+                    ),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                        _VideoCallIconButton(
+                          tooltip: provider.isMuted
+                              ? 'Activer le micro'
+                              : 'Couper le micro',
+                          icon: provider.isMuted
+                              ? Icons.mic_off_rounded
+                              : Icons.mic_none_rounded,
+                          onPressed: provider.toggleMute,
+                        ),
+                        _VideoCallIconButton(
+                          tooltip: provider.cameraOn
+                              ? 'Désactiver la caméra'
+                              : 'Activer la caméra',
+                          icon: provider.cameraOn
+                              ? Icons.videocam_rounded
+                              : Icons.videocam_off_rounded,
+                          onPressed: provider.toggleCamera,
+                        ),
+                        _VideoCallIconButton(
+                          tooltip: 'Raccrocher',
+                          icon: Icons.call_end_rounded,
+                          danger: true,
+                          size: 58,
+                          onPressed: () => unawaited(provider.endCall()),
+                        ),
+                        _VideoCallIconButton(
+                          tooltip: provider.speakerOn
+                              ? 'Désactiver le haut-parleur'
+                              : 'Activer le haut-parleur',
+                          icon: provider.speakerOn
+                              ? Icons.volume_up_rounded
+                              : Icons.volume_off_rounded,
+                          onPressed: provider.toggleSpeaker,
+                        ),
+                        if (_showVitalsButton)
+                          _VideoCallIconButton(
+                            tooltip: 'Signes vitaux',
+                            icon: Icons.monitor_heart_outlined,
+                            active: _vitalsPanelOpen,
+                            onPressed: () {
+                              setState(() {
+                                _vitalsPanelOpen = !_vitalsPanelOpen;
+                              });
+                            },
+                          ),
+                        if (_showVitalsButton)
+                          _VideoCallIconButton(
+                            tooltip: 'Rédiger une ordonnance',
+                            icon: Icons.medical_services_outlined,
+                            onPressed: () =>
+                                _openPrescriptionDuringCall(context),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1132,12 +1496,36 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
   Widget build(BuildContext context) {
     final provider = widget.callProvider;
     final quality = provider.connectionState;
-    final appBarTitle =
-        widget.isVideoCall ? 'Appel vidéo' : 'Appel audio';
-    final hasRemoteRenderer =
-        widget.isVideoCall && WebRtcService.instance.isRemoteRendererReady;
-    final hasLocalRenderer =
-        widget.isVideoCall && WebRtcService.instance.isLocalRendererReady;
+
+    if (!widget.isVideoCall) {
+      return Scaffold(
+        body: DecoratedBox(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Color(0xFFF7F9FC),
+                Color(0xFFE9EEF3),
+              ],
+            ),
+          ),
+          child: SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) => _buildAudioCallShell(
+                context,
+                provider,
+                quality,
+                constraints,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final hasRemoteRenderer = WebRtcService.instance.isRemoteRendererReady;
+    final hasLocalRenderer = WebRtcService.instance.isLocalRendererReady;
     final hasRemoteStream =
         hasRemoteRenderer &&
         WebRtcService.instance.remoteRenderer.srcObject != null;
@@ -1145,97 +1533,17 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
         hasLocalRenderer &&
         WebRtcService.instance.localRenderer.srcObject != null;
     return Scaffold(
-      appBar: AppBar(
-        title: Text(appBarTitle),
-        actions: _showVitalsButton
-            ? [
-                IconButton(
-                  tooltip: 'Voir la dernière ordonnance',
-                  icon: const Icon(Icons.picture_as_pdf_outlined),
-                  onPressed: () => unawaited(_openLatestPrescription(context)),
-                ),
-              ]
-            : const [],
-      ),
-      floatingActionButton: _showVitalsButton &&
-              provider.currentState == CallState.enAppel
-          ? FloatingActionButton.extended(
-              heroTag: 'doctor_prescription_fab',
-              backgroundColor: HeadsAppColors.brandPrimary,
-              foregroundColor: Colors.white,
-              icon: const Icon(Icons.medical_information_rounded),
-              label: const Text('Ordonnance'),
-              onPressed: () => _openPrescriptionDuringCall(context),
-            )
-          : null,
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final isSmall = constraints.maxWidth < 980;
-          final media = _buildMediaArea(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) => _buildVideoCallShell(
+            context,
+            provider,
             hasRemoteStream,
             hasLocalStream,
-            provider,
-            quality,
-          );
-          if (isSmall) {
-            return Stack(
-              children: [
-                Positioned.fill(child: media),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: AnimatedSlide(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeOutCubic,
-                    offset: _vitalsPanelOpen
-                        ? Offset.zero
-                        : const Offset(0, 1.04),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 300),
-                      height: constraints.maxHeight * 0.6,
-                      decoration: BoxDecoration(
-                        color: _VitalsPanelStyle.bg,
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(20),
-                        ),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x22000000),
-                            blurRadius: 20,
-                            offset: Offset(0, -4),
-                          ),
-                        ],
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      child: _buildVitalsPanel(),
-                    ),
-                  ),
-                ),
-              ],
-            );
-          }
-          final panelWidth = _vitalsPanelOpen ? constraints.maxWidth * 0.35 : 0.0;
-          return Row(
-            children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeOutCubic,
-                width: math.max(0, constraints.maxWidth - panelWidth),
-                child: media,
-              ),
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeOutCubic,
-                width: panelWidth,
-                child: panelWidth < 2
-                    ? const SizedBox.shrink()
-                    : _buildVitalsPanel(),
-              ),
-            ],
-          );
-        },
+            constraints,
+          ),
+        ),
       ),
     );
   }
@@ -1283,54 +1591,149 @@ class _GraphPoint {
   final double y;
 }
 
-class _CallControlPill extends StatelessWidget {
-  const _CallControlPill({
+class _VideoCallIconButton extends StatelessWidget {
+  const _VideoCallIconButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+    this.danger = false,
+    this.active = false,
+    this.size = 48,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback onPressed;
+  final bool danger;
+  final bool active;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = danger
+        ? const Color(0xFFE53935)
+        : active
+            ? Colors.white.withValues(alpha: 0.24)
+            : Colors.white.withValues(alpha: 0.14);
+
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: bg,
+        shape: const CircleBorder(),
+        child: InkWell(
+          onTap: onPressed,
+          customBorder: const CircleBorder(),
+          child: SizedBox(
+            width: size,
+            height: size,
+            child: Icon(
+              icon,
+              color: Colors.white,
+              size: size * 0.46,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DoctorAudioCallControl extends StatelessWidget {
+  const _DoctorAudioCallControl({
     required this.icon,
     required this.label,
     required this.onPressed,
     this.active = false,
-    this.danger = false,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onPressed;
   final bool active;
-  final bool danger;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final Color bg = danger
-        ? const Color(0xFFDC2626)
-        : active
-            ? const Color(0xFF0EA5E9)
-            : const Color(0xFFEFF6FF);
-    final Color fg = danger || active ? Colors.white : const Color(0xFF1E293B);
-    final borderColor = danger
-        ? const Color(0xFFB91C1C)
-        : active
-            ? const Color(0xFF0284C7)
-            : const Color(0xFFBFDBFE);
-    return FilledButton.icon(
-      style: FilledButton.styleFrom(
-        backgroundColor: bg,
-        foregroundColor: fg,
-        minimumSize: const Size(132, 44),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: borderColor),
-        ),
-        textStyle: theme.textTheme.labelLarge?.copyWith(
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.1,
-        ),
-        elevation: danger || active ? 1 : 0,
+    final bg = active
+        ? HeadsAppColors.brandHighlight
+        : const Color(0xFFF1F4F8);
+    final iconColor = active
+        ? HeadsAppColors.brandPrimary
+        : const Color(0xFF64748B);
+
+    return SizedBox(
+      width: 72,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Material(
+            color: bg,
+            shape: const CircleBorder(),
+            child: InkWell(
+              onTap: onPressed,
+              customBorder: const CircleBorder(),
+              child: SizedBox(
+                width: 52,
+                height: 52,
+                child: Icon(icon, color: iconColor, size: 24),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.3,
+              color: HeadsAppColors.textSecondary.withValues(alpha: 0.95),
+            ),
+          ),
+        ],
       ),
-      onPressed: onPressed,
-      icon: Icon(icon, size: 18),
-      label: Text(label),
+    );
+  }
+}
+
+class _AudioCallStatusDot extends StatefulWidget {
+  const _AudioCallStatusDot();
+
+  @override
+  State<_AudioCallStatusDot> createState() => _AudioCallStatusDotState();
+}
+
+class _AudioCallStatusDotState extends State<_AudioCallStatusDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: Tween<double>(begin: 0.45, end: 1).animate(_controller),
+      child: Container(
+        width: 8,
+        height: 8,
+        decoration: const BoxDecoration(
+          color: Color(0xFF1A3D5F),
+          shape: BoxShape.circle,
+        ),
+      ),
     );
   }
 }
