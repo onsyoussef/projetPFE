@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../chat_medecin_page.dart';
 import '../screens/doctor_blood_pressure_screen.dart';
+import '../screens/doctor_teleconsult_form_workflow_screen.dart';
 import '../services/api_service.dart';
 import '../utils/doctor_ui_utils.dart';
 import '../widgets/doctor_notifications_sheet.dart';
@@ -10,11 +11,13 @@ class DoctorNotificationEntry {
   const DoctorNotificationEntry({
     required this.sheetId,
     required this.notificationId,
+    required this.type,
     required this.conversationId,
     required this.title,
     required this.subtitle,
     required this.patientName,
     required this.kind,
+    this.formId,
     this.patientId,
     this.patientPhotoPath,
     this.occurredAt,
@@ -23,15 +26,20 @@ class DoctorNotificationEntry {
 
   final String sheetId;
   final String notificationId;
+  final String type;
   final String conversationId;
   final String title;
   final String subtitle;
   final String patientName;
+  final String? formId;
   final String? patientId;
   final String? patientPhotoPath;
   final DoctorNotificationVisualKind kind;
   final DateTime? occurredAt;
   final bool isRead;
+
+  bool get isTeleconsultFormNotification =>
+      type == 'teleconsult_form' && (formId?.isNotEmpty ?? false);
 
   bool get isWaitingRoom => kind == DoctorNotificationVisualKind.urgent &&
       subtitle.toLowerCase().contains('attente');
@@ -79,10 +87,12 @@ DoctorNotificationEntry _entryFromApi(Map<String, dynamic> raw) {
   return DoctorNotificationEntry(
     sheetId: id.isNotEmpty ? id : '$type-${occurredAt?.millisecondsSinceEpoch ?? 0}',
     notificationId: id,
+    type: type,
     conversationId: conversationId,
     title: title,
     subtitle: body.isNotEmpty ? body : title,
     patientName: patientName,
+    formId: payload['formId']?.toString(),
     patientId: payload['patientId']?.toString(),
     patientPhotoPath: payload['patientPhotoPath']?.toString(),
     kind: kind,
@@ -126,6 +136,58 @@ DoctorNotificationSheetItem _toSheetItem(
   required String doctorId,
   VoidCallback? beforeNavigate,
 }) {
+  VoidCallback? onTap;
+
+  if (n.isTeleconsultFormNotification) {
+    final formId = n.formId!;
+    onTap = () {
+      beforeNavigate?.call();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.of(context).push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => DoctorTeleconsultFormDetailScreen(
+              doctorId: doctorId,
+              formId: formId,
+            ),
+          ),
+        );
+      });
+    };
+  } else if (n.conversationId.isNotEmpty && (n.patientId?.isNotEmpty ?? false)) {
+    onTap = () {
+      beforeNavigate?.call();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final pid = n.patientId;
+        if (pid == null || pid.isEmpty) return;
+        Navigator.of(context).push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => ChatMedecinPage(
+              conversationId: n.conversationId,
+              patientId: pid,
+              patientName: n.patientName,
+              patientPhotoPath: n.patientPhotoPath,
+              doctorId: doctorId,
+            ),
+          ),
+        );
+      });
+    };
+  } else if (n.kind == DoctorNotificationVisualKind.analysis &&
+      n.subtitle.toLowerCase().contains('tension')) {
+    onTap = () {
+      beforeNavigate?.call();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.of(context).push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => DoctorBloodPressureScreen(
+              doctorId: doctorId,
+            ),
+          ),
+        );
+      });
+    };
+  }
+
   return DoctorNotificationSheetItem(
     id: n.sheetId,
     kind: n.kind,
@@ -133,40 +195,7 @@ DoctorNotificationSheetItem _toSheetItem(
     subtitle: n.subtitle,
     occurredAt: n.occurredAt,
     dismissible: false,
-    onTap: n.conversationId.isNotEmpty && (n.patientId?.isNotEmpty ?? false)
-        ? () {
-            beforeNavigate?.call();
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              final pid = n.patientId;
-              if (pid == null || pid.isEmpty) return;
-              Navigator.of(context).push<void>(
-                MaterialPageRoute<void>(
-                  builder: (_) => ChatMedecinPage(
-                    conversationId: n.conversationId,
-                    patientId: pid,
-                    patientName: n.patientName,
-                    patientPhotoPath: n.patientPhotoPath,
-                    doctorId: doctorId,
-                  ),
-                ),
-              );
-            });
-          }
-        : n.kind == DoctorNotificationVisualKind.analysis &&
-                n.subtitle.toLowerCase().contains('tension')
-            ? () {
-                beforeNavigate?.call();
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  Navigator.of(context).push<void>(
-                    MaterialPageRoute<void>(
-                      builder: (_) => DoctorBloodPressureScreen(
-                        doctorId: doctorId,
-                      ),
-                    ),
-                  );
-                });
-              }
-            : null,
+    onTap: onTap,
   );
 }
 
